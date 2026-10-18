@@ -1,0 +1,7 @@
+# Нормалізуємо завершення рядків у текстових файлах.
+* text=auto eol=lf
+*.cmd text eol=crlf
+# Бінарні файли не порівнюємо як текст.
+*.jar binary
+*.png binary
+*.jpg binary

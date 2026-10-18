@@ -1,0 +1,48 @@
+# Один workflow перевіряє однаковий commit на трьох операційних системах.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Show CI build number
+        run: echo "CI build ${{ github.run_number }}"
+
+      - name: Verify on Unix
+        if: runner.os != 'Windows'
+        run: |
+          chmod +x mvnw
+          ./mvnw -B verify
+
+      - name: Verify on Windows
+        if: runner.os == 'Windows'
+        run: .\mvnw.cmd -B verify
+
+      - name: Upload JAR
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jar-${{ matrix.os }}-${{ github.run_number }}
+          path: target/*.jar
+          if-no-files-found: error
