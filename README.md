@@ -1,6 +1,6 @@
-# Журнал спортивних тренувань (КЗП, ЛР1, варіант 2)
+# Журнал спортивних тренувань (КЗП, ЛР2, варіант 2)
 
-Програма читає записи про тренування з `data/input.csv`, перевіряє їх, обчислює кількість коректних записів, сумарний час, сумарну дистанцію та найбільшу витрату калорій і формує звіт у консоль та файл `out/report.txt`.
+Записи моделюються незмінним класом `Training` (перевірка інваріантів у конструкторі, фабрика `fromCsv`), підсумок - record `DurationDistance`. Звіт збігається з ЛР1.
 
 ## Формат входу
 
@@ -18,10 +18,10 @@ date;kind;minutes;distanceKm;calories
 
 ```text
 mvnw.cmd verify
-java -jar target/kzp-lab-andrushko-1.0.0.jar
-java -jar target/kzp-lab-andrushko-1.0.0.jar --input data/input.csv --output out/report.txt
-java -jar target/kzp-lab-andrushko-1.0.0.jar --help
-java -jar target/kzp-lab-andrushko-1.0.0.jar --version
+java -jar target/kzp-lab-andrushko-1.1.0.jar
+java -jar target/kzp-lab-andrushko-1.1.0.jar --input data/input.csv --output out/report.txt
+java -jar target/kzp-lab-andrushko-1.1.0.jar --help
+java -jar target/kzp-lab-andrushko-1.1.0.jar --version
 ```
 
 На macOS та Ubuntu замість `mvnw.cmd` використовуйте `./mvnw`. Звіт про виконання - у `REPORT.md`.

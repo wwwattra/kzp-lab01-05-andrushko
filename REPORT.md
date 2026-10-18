@@ -1,495 +1,398 @@
-# Звіт до лабораторної роботи №1
+# Звіт до лабораторної роботи №2
 
-з дисципліни «Кросплатформні засоби програмування», тема «Розгортання Java-проєкту та базова обробка даних». Варіант 2. Спортивні тренування.
+з дисципліни «Кросплатформні засоби програмування», тема «Класи, record і інкапсуляція в Java-проєкті». Варіант 2. Спортивні тренування.
 Виконав: студент групи КІ-302 Андрушко А. І. Прийняв: Олексів М. В.
 
 ## Тема, номер і варіант
 
-Лабораторна робота № 1 «Розгортання Java-проєкту та базова обробка даних». Варіант 2 – «Спортивні тренування». Операційна система розробки – Windows 10 (64-bit), JDK – Eclipse Temurin 21.0.12, Maven 3.9.11 (через Maven Wrapper 3.3.4).
+Лабораторна робота № 2 «Класи, record і інкапсуляція в Java-проєкті». Варіант 2 – «Спортивні тренування» (незмінний з ЛР1). ОС – Windows 10 (64-bit), JDK Temurin 21.0.12, Maven 3.9.11 через Wrapper. Версія продукту – 1.1.0.
 
-Посилання на GitHub-репозиторій: https://github.com/[ваш-логін]/kzp-lab-andrushko, Git-тег: v1.0.0.
+Посилання на GitHub-репозиторій: https://github.com/[ваш-логін]/kzp-lab-andrushko, гілка lab02, Git-тег v1.1.0.
 
 ## Мета роботи
 
-Пройти повний шлях від створення репозиторію та налаштування інфраструктури до першої версії консольної програми, яку можна відтворено зібрати й запустити на Windows, macOS та Ubuntu. У результаті створено Maven-проєкт із JUnit 5, статичним аналізатором SpotBugs, виконуваним JAR (maven-shade-plugin), Maven Wrapper і робочим процесом GitHub Actions для трьох ОС; реалізовано програму, що читає журнал тренувань, перевіряє записи, обчислює чотири показники варіанта та виводить звіт у консоль і файл.
+Перебудувати предметну частину продукту ЛР1: замість рядків, масивів і паралельних змінних використати клас-сутність Training з інкапсульованим незмінним станом, перевірку інваріантів у конструкторі, статичний фабричний метод fromCsv, record DurationDistance для підсумку та тести, які підтверджують збереження поведінки. Інфраструктура ЛР1 (Wrapper, JUnit, SpotBugs, Shade, CI) успадкована без змін.
 
-## Постановка задачі
+## Стан до і після цієї роботи
 
-Вхідний файл data/input.csv у кодуванні UTF-8 містить по одному запису в рядку, поля розділено крапкою з комою. Формат запису варіанта 2:
+*Таблиця 1 – Що замінено*
 
-```text
-date:String; kind:String; minutes:int; distanceKm:double; calories:int
-```
+| Елемент | ЛР1 | ЛР2 |
+|---|---|---|
+| Один запис | рядок і fields[2], fields[3]… | об'єкт Training |
+| Перевірка | метод validate з умовами над масивом | конструктор + Training.fromCsv |
+| Набір даних | List<String> коректних рядків | List<Training> |
+| Підсумок | масив double[4] з індексами | record DurationDistance |
+| Дата | текст без розбору | LocalDate (YYYY-MM-DD) |
+| Звіт | formatReport(double[], …) | formatReport(DurationDistance, …) – той самий текст |
 
-Показники звіту: 1) кількість коректних записів; 2) сумарний час тренувань, хв; 3) сумарна дистанція, км; 4) найбільша витрата калорій, ккал. Програма підтримує режими --help, --version, звичайний запуск, а також аргументи --input <файл> і --output <файл> (типово data/input.csv та out/report.txt).
+Методи ЛР1 (validate, splitValid, computeStats, formatReport(double[])) збережено як тонкий фасад над новими класами, тому 10 тестів ЛР1 проходять без жодної зміни.
 
-Перевірки рядка: порожній рядок; кількість полів (рівно 5); порожня дата або вид; нечислове значення в числовому полі; від'ємні хвилини, дистанція або калорії; нескінченна дистанція; файл без жодного коректного запису. Хибний рядок не зупиняє програму – формується повідомлення з номером рядка та причиною.
+## Клас-сутність
 
-## Структура програми
+Training – final-клас із полями private final: LocalDate date, String kind, int minutes, double distanceKm, int calories. Сеттерів немає: тренування після запису в журнал не змінюється, тому незмінний об'єкт виключає появу неперевірених значень. Інваріанти (з таблиці варіантів): дата й вид не порожні (Objects.requireNonNull для null, isBlank для порожнього тексту); хвилини, дистанція й калорії >= 0; дистанція скінченна (Double.isFinite відкидає NaN та нескінченність). Методи читання – getDate, getKind, getMinutes, getDistanceKm, getCalories. toString форматує запис через Locale.ROOT: 2026-09-01 біг: 45 хв, 8.50 км, 520 ккал.
 
-*Таблиця 1 – Файли проєкту*
-
-| Файл | Призначення |
-|---|---|
-| pom.xml | координати ua.lpnu.kzp:kzp-lab-andrushko:1.0.0, Java 21, UTF-8, JUnit, SpotBugs, Shade |
-| mvnw, mvnw.cmd, .mvn/wrapper/ | Maven Wrapper для відтворюваної збірки |
-| src/main/java/ua/lpnu/kzp/Main.java | точка входу, розбір аргументів, вивід у консоль і файл |
-| src/main/java/ua/lpnu/kzp/TrainingProcessor.java | перевірка рядків, обчислення показників, форматування звіту |
-| src/main/java/ua/lpnu/kzp/FileReport.java | читання й запис файлів через Path і явний UTF-8 |
-| src/test/java/ua/lpnu/kzp/TrainingProcessorTest.java | 10 тестів JUnit 5 |
-| data/input.csv | приклад даних: 8 коректних і 5 хибних рядків |
-| .github/workflows/ci.yml | CI: verify на трьох ОС і публікація JAR |
-| .github/ISSUE_TEMPLATE/*.yml, PULL_REQUEST_TEMPLATE.md | форми Issues і чек-лист PR |
-| .gitignore, .gitattributes, .editorconfig, README.md | службові правила й документація |
-
-Потік даних: FileReport.readLines (UTF-8) → TrainingProcessor.splitValid (кожен рядок проходить validate: прочитати → перевірити → перетворити) → computeStats (масив із чотирьох показників) → formatReport (один текст звіту з Locale.ROOT) → вивід у консоль і FileReport.writeReport. Читання, обчислення та форматування розділено на окремі методи, щоб у ЛР2 замінити рядки й масиви власними класами.
-
-*Лістинг 1 – src/main/java/ua/lpnu/kzp/TrainingProcessor.java*
+*Лістинг 1 – src/main/java/ua/lpnu/kzp/Training.java*
 
 ```text
 package ua.lpnu.kzp;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.Locale;
+import java.util.Objects;
 
-/**
- * Перевіряє рядки про спортивні тренування, обчислює показники та формує звіт.
- *
- * <p>Формат рядка: {@code date;kind;minutes;distanceKm;calories}.
- */
-public final class TrainingProcessor {
-    /** Кількість полів у коректному рядку. */
+/** Описує незмінний запис про одне спортивне тренування. */
+public final class Training {
+    /** Кількість полів у CSV-рядку. */
     public static final int FIELD_COUNT = 5;
 
-    /** Індекс показника «кількість коректних записів» у масиві статистики. */
-    public static final int COUNT = 0;
-    /** Індекс показника «сумарний час, хв». */
-    public static final int TOTAL_MINUTES = 1;
-    /** Індекс показника «сумарна дистанція, км». */
-    public static final int TOTAL_DISTANCE = 2;
-    /** Індекс показника «найбільша витрата калорій». */
-    public static final int MAX_CALORIES = 3;
+    private final LocalDate date;
+    private final String kind;
+    private final int minutes;
+    private final double distanceKm;
+    private final int calories;
 
-    /* Забороняє створення екземплярів службового класу. */
-    private TrainingProcessor() {
+    /**
+     * Створює коректне тренування після перевірки інваріантів.
+     *
+     * @param date дата тренування
+     * @param kind вид тренування, не порожній
+     * @param minutes тривалість у хвилинах, не від'ємна
+     * @param distanceKm дистанція в кілометрах, не від'ємна й скінченна
+     * @param calories витрата калорій, не від'ємна
+     * @throws IllegalArgumentException якщо порушено інваріант
+     */
+    public Training(LocalDate date, String kind, int minutes, double distanceKm, int calories) {
+        this.date = Objects.requireNonNull(date, "Дата не може бути null");
+        this.kind = Objects.requireNonNull(kind, "Вид не може бути null");
+        if (kind.isBlank()) {
+            throw new IllegalArgumentException("порожня дата або вид тренування");
+        }
+        if (minutes < 0 || distanceKm < 0 || calories < 0) {
+            throw new IllegalArgumentException("від'ємне числове значення");
+        }
+        if (!Double.isFinite(distanceKm)) {
+            throw new IllegalArgumentException("дистанція має бути скінченним числом");
+        }
+        this.minutes = minutes;
+        this.distanceKm = distanceKm;
+        this.calories = calories;
     }
 
     /**
-     * Перевіряє один рядок і повертає причину помилки.
+     * Створює тренування з CSV-рядка {@code date;kind;minutes;distanceKm;calories}.
      *
-     * @param line вхідний рядок
-     * @return текст причини або {@code null}, якщо рядок коректний
+     * @param line рядок CSV
+     * @return створене тренування
+     * @throws IllegalArgumentException якщо структура, типи або значення некоректні
      */
-    public static String validate(String line) {
+    public static Training fromCsv(String line) {
+        // Фабрика відповідає за структуру й типи, конструктор - за інваріанти.
         if (line == null || line.isBlank()) {
-            return "порожній рядок";
+            throw new IllegalArgumentException("порожній рядок");
         }
-        // -1 зберігає порожні поля наприкінці рядка.
         String[] fields = line.split(";", -1);
         if (fields.length != FIELD_COUNT) {
-            return "очікується %d полів, отримано %d".formatted(FIELD_COUNT, fields.length);
+            throw new IllegalArgumentException(
+                    "очікується %d полів, отримано %d".formatted(FIELD_COUNT, fields.length));
         }
         if (fields[0].isBlank() || fields[1].isBlank()) {
-            return "порожня дата або вид тренування";
+            throw new IllegalArgumentException("порожня дата або вид тренування");
+        }
+        LocalDate date;
+        try {
+            date = LocalDate.parse(fields[0].trim());
+        } catch (DateTimeParseException exception) {
+            throw new IllegalArgumentException("дата має формат YYYY-MM-DD", exception);
         }
         try {
-            int minutes = Integer.parseInt(fields[2].trim());
-            double distance = Double.parseDouble(fields[3].trim());
-            int calories = Integer.parseInt(fields[4].trim());
-            if (minutes < 0 || distance < 0 || calories < 0) {
-                return "від'ємне числове значення";
-            }
-            if (!Double.isFinite(distance)) {
-                return "дистанція має бути скінченним числом";
-            }
+            return new Training(date, fields[1].trim(),
+                    Integer.parseInt(fields[2].trim()),
+                    Double.parseDouble(fields[3].trim()),
+                    Integer.parseInt(fields[4].trim()));
         } catch (NumberFormatException exception) {
-            return "числове поле має помилковий формат";
+            throw new IllegalArgumentException("числове поле має помилковий формат", exception);
         }
-        return null;
+    }
+
+    /** @return дата тренування */
+    public LocalDate getDate() {
+        return date;
+    }
+
+    /** @return вид тренування */
+    public String getKind() {
+        return kind;
+    }
+
+    /** @return тривалість у хвилинах */
+    public int getMinutes() {
+        return minutes;
+    }
+
+    /** @return дистанція в кілометрах */
+    public double getDistanceKm() {
+        return distanceKm;
+    }
+
+    /** @return витрата калорій */
+    public int getCalories() {
+        return calories;
+    }
+
+    /** Повертає текстове подання тренування для звіту. */
+    @Override
+    public String toString() {
+        return String.format(Locale.ROOT, "%s %s: %d хв, %.2f км, %d ккал",
+                date, kind, minutes, distanceKm, calories);
+    }
+}
+```
+
+## Фабричний метод і record
+
+Training.fromCsv(String) відповідає за структуру й типи: порожній рядок, кількість полів (split(";", -1)), порожні дата/вид, формат дати (LocalDate.parse), числа (NumberFormatException перетворюється на IllegalArgumentException із причиною). Інваріанти перевіряє конструктор, тому обійти їх іншим способом створення неможливо. Номер рядка додається на рівні циклу читання TrainingProcessor.parseAll.
+
+Record DurationDistance(count, totalMinutes, totalDistance, maxCalories) – незмінне значення підсумку. Компактний конструктор відхиляє від'ємні та нескінченні показники; компілятор автоматично створює конструктор, методи доступу, equals, hashCode, toString. Статичний метод of(List<Training>) обчислює показники.
+
+*Лістинг 2 – src/main/java/ua/lpnu/kzp/DurationDistance.java*
+
+```text
+package ua.lpnu.kzp;
+
+import java.util.List;
+
+/**
+ * Незмінний підсумок показників варіанта 2.
+ *
+ * @param count кількість коректних записів
+ * @param totalMinutes сумарний час, хв
+ * @param totalDistance сумарна дистанція, км
+ * @param maxCalories найбільша витрата калорій
+ */
+public record DurationDistance(int count, int totalMinutes, double totalDistance, int maxCalories) {
+    /** Перевіряє допустимість підсумкових показників. */
+    public DurationDistance {
+        if (count < 0 || totalMinutes < 0 || maxCalories < 0
+                || totalDistance < 0 || !Double.isFinite(totalDistance)) {
+            throw new IllegalArgumentException("Показники не можуть бути від'ємними");
+        }
     }
 
     /**
-     * Обчислює чотири показники варіанта за коректними рядками.
+     * Обчислює підсумок для списку тренувань.
      *
-     * @param validLines рядки, що пройшли {@link #validate(String)}
-     * @return масив {кількість, сумарний час, сумарна дистанція, максимум калорій}
+     * @param trainings коректні тренування
+     * @return підсумкові показники
      */
-    public static double[] computeStats(List<String> validLines) {
-        double[] stats = new double[4];
-        for (String line : validLines) {
-            String[] fields = line.split(";", -1);
-            stats[COUNT]++;
-            stats[TOTAL_MINUTES] += Integer.parseInt(fields[2].trim());
-            stats[TOTAL_DISTANCE] += Double.parseDouble(fields[3].trim());
-            stats[MAX_CALORIES] = Math.max(stats[MAX_CALORIES], Integer.parseInt(fields[4].trim()));
+    public static DurationDistance of(List<Training> trainings) {
+        int minutes = 0;
+        double distance = 0.0;
+        int maxCalories = 0;
+        for (Training training : trainings) {
+            minutes += training.getMinutes();
+            distance += training.getDistanceKm();
+            maxCalories = Math.max(maxCalories, training.getCalories());
         }
-        return stats;
+        return new DurationDistance(trainings.size(), minutes, distance, maxCalories);
     }
+}
+```
 
+*Лістинг 3 – TrainingProcessor.java (фрагмент parseAll)*
+
+```text
     /**
-     * Розділяє вхідні рядки на коректні та повідомлення про помилки.
+     * Перетворює рядки на тренування; хибний рядок не потрапляє до списку.
      *
      * @param lines усі рядки файла
-     * @param valid список, до якого додаються коректні рядки
+     * @param trainings список, до якого додаються коректні тренування
      * @return повідомлення про пропущені рядки з номером і причиною
      */
-    public static List<String> splitValid(List<String> lines, List<String> valid) {
+    public static List<String> parseAll(List<String> lines, List<Training> trainings) {
         List<String> errors = new ArrayList<>();
-        for (int index = 0; index < lines.size(); index++) {
-            String reason = validate(lines.get(index));
-            if (reason == null) {
-                valid.add(lines.get(index));
-            } else {
-                errors.add("Рядок %d: %s".formatted(index + 1, reason));
+        for (int lineNumber = 1; lineNumber <= lines.size(); lineNumber++) {
+            try {
+                trainings.add(Training.fromCsv(lines.get(lineNumber - 1)));
+            } catch (IllegalArgumentException exception) {
+                errors.add("Рядок %d: %s".formatted(lineNumber, exception.getMessage()));
             }
         }
         return errors;
     }
-
-    /**
-     * Формує текст звіту, незалежний від локалі операційної системи.
-     *
-     * @param stats показники з {@link #computeStats(List)}
-     * @param errors повідомлення про пропущені рядки
-     * @return готовий текст звіту
-     */
-    public static String formatReport(double[] stats, List<String> errors) {
-        StringBuilder report = new StringBuilder();
-        String nl = System.lineSeparator();
-        report.append("Звіт: спортивні тренування").append(nl);
-        report.append(String.format(Locale.ROOT, "%-34s %10s%n", "Показник", "Значення"));
-        report.append(String.format(Locale.ROOT, "%-34s %10d%n",
-                "Коректних записів", (long) stats[COUNT]));
-        report.append(String.format(Locale.ROOT, "%-34s %10d%n",
-                "Сумарний час, хв", (long) stats[TOTAL_MINUTES]));
-        report.append(String.format(Locale.ROOT, "%-34s %10.2f%n",
-                "Сумарна дистанція, км", stats[TOTAL_DISTANCE]));
-        report.append(String.format(Locale.ROOT, "%-34s %10d%n",
-                "Найбільша витрата калорій, ккал", (long) stats[MAX_CALORIES]));
-        report.append(String.format(Locale.ROOT, "Пропущено рядків: %d%n", errors.size()));
-        for (String error : errors) {
-            report.append(error).append(nl);
-        }
-        return report.toString();
-    }
-}
 ```
 
-*Лістинг 2 – src/main/java/ua/lpnu/kzp/Main.java*
+## Тестування
+
+До 10 перенесених тестів ЛР1 додано 12 тестів TrainingTest: коректний конструктор зберігає всі поля; граничний випадок 0 хв / 0 км / 0 ккал; порожній і null-вид, null-дата; від'ємні значення; NaN і нескінченність; fromCsv для коректного рядка; неправильна кількість полів, число й дата; порушення інваріанта в CSV; toString із крапкою; значеннєва рівність і компоненти record; record відхиляє від'ємні значення; хибний рядок не потрапляє до списку й не змінює статистику.
+
+*Лістинг 4 – src/test/java/ua/lpnu/kzp/TrainingTest.java*
 
 ```text
 package ua.lpnu.kzp;
 
-import java.io.FileDescriptor;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.PrintStream;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Path;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import org.junit.jupiter.api.Test;
 
-/** Консольна програма обробки журналу спортивних тренувань (варіант 2). */
-public final class Main {
-    /** Версія програми, узгоджена з pom.xml і Git-тегом. */
-    public static final String VERSION = "1.0.0";
+class TrainingTest {
+    private static final LocalDate DATE = LocalDate.of(2026, 9, 1);
 
-    /* Забороняє створення екземплярів класу точки входу. */
-    private Main() {
+    /* Перевіряє, що коректний конструктор зберігає всі поля. */
+    @Test
+    void constructorStoresAllFields() {
+        Training training = new Training(DATE, "біг", 45, 8.5, 520);
+        assertEquals(DATE, training.getDate());
+        assertEquals("біг", training.getKind());
+        assertEquals(45, training.getMinutes());
+        assertEquals(8.5, training.getDistanceKm(), 0.0001);
+        assertEquals(520, training.getCalories());
     }
 
-    /**
-     * Точка входу до програми.
-     *
-     * @param args {@code --help}, {@code --version}, {@code --input <файл>}, {@code --output <файл>}
-     */
-    public static void main(String[] args) {
-        // Потік із явним UTF-8 закривається try-with-resources (виправлення SpotBugs OS_OPEN_STREAM).
-        try (PrintStream out = new PrintStream(new FileOutputStream(FileDescriptor.out),
-                true, StandardCharsets.UTF_8)) {
-            run(args, out);
-        }
+    /* Перевіряє граничний коректний випадок: нульові хвилини, дистанція й калорії. */
+    @Test
+    void constructorAcceptsZeroBoundary() {
+        Training training = new Training(DATE, "тренажери", 0, 0.0, 0);
+        assertEquals(0, training.getMinutes());
     }
 
-    /**
-     * Розбирає аргументи, обробляє файл і виводить звіт у переданий потік.
-     *
-     * @param args аргументи командного рядка
-     * @param out потік для повідомлень користувачу
-     */
-    static void run(String[] args, PrintStream out) {
-        Path input = Path.of("data", "input.csv");
-        Path output = Path.of("out", "report.txt");
-        for (int index = 0; index < args.length; index++) {
-            if ("--help".equals(args[index])) {
-                out.printf("Використання: java -jar kzp-lab-andrushko.jar "
-                        + "[--help] [--version] [--input <файл>] [--output <файл>]%n");
-                return;
-            } else if ("--version".equals(args[index])) {
-                String build = System.getenv("GITHUB_RUN_NUMBER");
-                out.printf("kzp-lab-andrushko %s%s%n", VERSION,
-                        build == null ? "" : " (CI build " + build + ")");
-                return;
-            } else if ("--input".equals(args[index]) && index + 1 < args.length) {
-                input = Path.of(args[++index]);
-            } else if ("--output".equals(args[index]) && index + 1 < args.length) {
-                output = Path.of(args[++index]);
-            } else {
-                out.printf("Невідомий аргумент: %s%n", args[index]);
-                return;
-            }
-        }
-        try {
-            List<String> lines = FileReport.readLines(input);
-            List<String> valid = new ArrayList<>();
-            List<String> errors = TrainingProcessor.splitValid(lines, valid);
-            if (valid.isEmpty()) {
-                out.printf("У файлі %s немає жодного коректного запису%n", input);
-            }
-            String report = TrainingProcessor.formatReport(
-                    TrainingProcessor.computeStats(valid), errors);
-            out.print(report);
-            FileReport.writeReport(output, report);
-            out.printf("Звіт записано у %s%n", output);
-        } catch (IOException exception) {
-            out.printf("Помилка роботи з файлом: %s%n", exception.getMessage());
-        }
-    }
-}
-```
-
-*Лістинг 3 – src/main/java/ua/lpnu/kzp/FileReport.java*
-
-```text
-package ua.lpnu.kzp;
-
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.List;
-
-/** Ізолює кросплатформне читання та запис текстових файлів. */
-public final class FileReport {
-    /* Забороняє створення екземплярів службового класу. */
-    private FileReport() {
+    /* Перевіряє відхилення порожнього та null-виду. */
+    @Test
+    void constructorRejectsBlankOrNullKind() {
+        assertThrows(IllegalArgumentException.class, () -> new Training(DATE, " ", 45, 8.5, 520));
+        assertThrows(NullPointerException.class, () -> new Training(DATE, null, 45, 8.5, 520));
+        assertThrows(NullPointerException.class, () -> new Training(null, "біг", 45, 8.5, 520));
     }
 
-    /**
-     * Читає рядки у фіксованому кодуванні UTF-8.
-     *
-     * @param input шлях до вхідного файла
-     * @return рядки файла
-     * @throws IOException якщо файл неможливо прочитати
-     */
-    public static List<String> readLines(Path input) throws IOException {
-        // Явне кодування не залежить від налаштувань операційної системи.
-        return Files.readAllLines(input, StandardCharsets.UTF_8);
+    /* Перевіряє відхилення від'ємних значень. */
+    @Test
+    void constructorRejectsNegativeValues() {
+        assertThrows(IllegalArgumentException.class, () -> new Training(DATE, "біг", -1, 8.5, 520));
+        assertThrows(IllegalArgumentException.class, () -> new Training(DATE, "біг", 45, -0.1, 520));
+        assertThrows(IllegalArgumentException.class, () -> new Training(DATE, "біг", 45, 8.5, -5));
     }
 
-    /**
-     * Створює каталог призначення і записує звіт.
-     *
-     * @param output шлях до файла звіту
-     * @param report готовий текст звіту
-     * @throws IOException якщо каталог або файл неможливо створити
-     */
-    public static void writeReport(Path output, String report) throws IOException {
-        // Після клонування репозиторію каталог out може ще не існувати.
-        Path parent = output.toAbsolutePath().getParent();
-        if (parent != null) {
-            Files.createDirectories(parent);
-        }
-        Files.writeString(output, report, StandardCharsets.UTF_8);
+    /* Перевіряє відхилення NaN і нескінченної дистанції. */
+    @Test
+    void constructorRejectsNonFiniteDistance() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new Training(DATE, "біг", 45, Double.NaN, 520));
+        assertThrows(IllegalArgumentException.class,
+                () -> new Training(DATE, "біг", 45, Double.POSITIVE_INFINITY, 520));
+    }
+
+    /* Перевіряє створення сутності з коректного CSV-рядка. */
+    @Test
+    void fromCsvCreatesValidEntity() {
+        Training training = Training.fromCsv("2026-09-02;велосипед;90;32.00;780");
+        assertEquals(LocalDate.of(2026, 9, 2), training.getDate());
+        assertEquals("велосипед", training.getKind());
+        assertEquals(32.0, training.getDistanceKm(), 0.0001);
+    }
+
+    /* Перевіряє відхилення неправильної кількості полів, числа та дати. */
+    @Test
+    void fromCsvRejectsInvalidStructure() {
+        assertThrows(IllegalArgumentException.class, () -> Training.fromCsv("2026-09-14;біг;40;7.00"));
+        assertThrows(IllegalArgumentException.class,
+                () -> Training.fromCsv("2026-09-13;плавання;сорок;1.20;380"));
+        assertThrows(IllegalArgumentException.class, () -> Training.fromCsv("13.09.2026;біг;40;7.00;300"));
+    }
+
+    /* Перевіряє, що порушення інваріанта у CSV також відхиляється. */
+    @Test
+    void fromCsvRejectsInvariantViolation() {
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> Training.fromCsv("2026-09-11;біг;-20;4.00;300"));
+        assertEquals("від'ємне числове значення", exception.getMessage());
+    }
+
+    /* Перевіряє toString із крапкою як десятковим роздільником. */
+    @Test
+    void toStringUsesRootLocale() {
+        assertEquals("2026-09-01 біг: 45 хв, 8.50 км, 520 ккал",
+                new Training(DATE, "біг", 45, 8.5, 520).toString());
+    }
+
+    /* Перевіряє значеннєву рівність record. */
+    @Test
+    void recordUsesValueEquality() {
+        DurationDistance first = new DurationDistance(2, 135, 40.5, 780);
+        assertEquals(first, new DurationDistance(2, 135, 40.5, 780));
+        assertNotEquals(first, new DurationDistance(2, 135, 40.5, 781));
+        assertEquals(135, first.totalMinutes());
+    }
+
+    /* Перевіряє, що record відхиляє від'ємні показники. */
+    @Test
+    void recordRejectsNegativeValues() {
+        assertThrows(IllegalArgumentException.class, () -> new DurationDistance(-1, 0, 0, 0));
+    }
+
+    /* Перевіряє, що хибний рядок не потрапляє до списку й не змінює статистику. */
+    @Test
+    void invalidLineDoesNotChangeStatistics() {
+        List<Training> trainings = new ArrayList<>();
+        List<String> errors = TrainingProcessor.parseAll(List.of(
+                "2026-09-01;біг;45;8.50;520", "2026-09-11;біг;-20;4.00;900"), trainings);
+        assertEquals(1, trainings.size());
+        assertEquals(1, errors.size());
+        assertTrue(errors.get(0).startsWith("Рядок 2"));
+        assertEquals(520, DurationDistance.of(trainings).maxCalories());
     }
 }
 ```
 
 ## Інфраструктура
 
-pom.xml задає координати артефакта, maven.compiler.release=21 і кодування UTF-8. JUnit 5.12.2 підключено зі scope=test, тому бібліотека не потрапляє у JAR і не копіюється в репозиторій. SpotBugs 4.9.7.0 прив'язано до фази verify (ціль check), maven-shade-plugin 3.6.0 – до фази package, у маніфесті вказано ua.lpnu.kzp.Main. Maven Wrapper згенеровано командою mvn wrapper:wrapper; він завантажує Maven 3.9.11.
-
-*Лістинг 4 – pom.xml*
+*Лістинг 5 – Результат mvnw.cmd -B clean verify*
 
 ```text
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
-                             https://maven.apache.org/xsd/maven-4.0.0.xsd">
-    <modelVersion>4.0.0</modelVersion>
-
-    <groupId>ua.lpnu.kzp</groupId>
-    <artifactId>kzp-lab-andrushko</artifactId>
-    <version>1.0.0</version>
-
-    <properties>
-        <maven.compiler.release>21</maven.compiler.release>
-        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-    </properties>
-
-    <dependencies>
-        <dependency>
-            <groupId>org.junit.jupiter</groupId>
-            <artifactId>junit-jupiter</artifactId>
-            <version>5.12.2</version>
-            <scope>test</scope>
-        </dependency>
-    </dependencies>
-
-    <build>
-        <plugins>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.13.0</version>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-surefire-plugin</artifactId>
-                <version>3.5.2</version>
-            </plugin>
-            <plugin>
-                <groupId>com.github.spotbugs</groupId>
-                <artifactId>spotbugs-maven-plugin</artifactId>
-                <version>4.9.7.0</version>
-                <executions>
-                    <execution>
-                        <phase>verify</phase>
-                        <goals><goal>check</goal></goals>
-                    </execution>
-                </executions>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-shade-plugin</artifactId>
-                <version>3.6.0</version>
-                <executions>
-                    <execution>
-                        <phase>package</phase>
-                        <goals><goal>shade</goal></goals>
-                        <configuration>
-                            <transformers>
-                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                                    <mainClass>ua.lpnu.kzp.Main</mainClass>
-                                </transformer>
-                            </transformers>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
-        </plugins>
-    </build>
-</project>
+[INFO] Building kzp-lab-andrushko 1.1.0
+[INFO] Tests run: 10, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.155 s -- in ua.lpnu.kzp.TrainingProcessorTest
+[INFO] Tests run: 12, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.060 s -- in ua.lpnu.kzp.TrainingTest
+[INFO] Tests run: 22, Failures: 0, Errors: 0, Skipped: 0
+[INFO] Building jar: C:\Users\user\kzp-labs\lab02\target\kzp-lab-andrushko-1.1.0.jar
+[INFO] BugInstance size is 0
+[INFO] No errors/warnings found
+[INFO] BUILD SUCCESS
 ```
 
-Робочий процес GitHub Actions запускає verify у матриці ubuntu-latest, windows-latest, macos-latest (на Unix – ./mvnw, на Windows – mvnw.cmd), кешує залежності Maven і публікує JAR як артефакт jar-<ос>-<номер запуску>. Номер запуску GITHUB_RUN_NUMBER також виводиться програмою в режимі --version.
-
-*Лістинг 5 – .github/workflows/ci.yml*
+*Лістинг 6 – java -jar target/kzp-lab-andrushko-1.1.0.jar --version*
 
 ```text
-# Один workflow перевіряє однаковий commit на трьох операційних системах.
-name: CI
-
-on:
-  push:
-  pull_request:
-
-permissions:
-  contents: read
-
-jobs:
-  verify:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '21'
-          cache: maven
-
-      - name: Show CI build number
-        run: echo "CI build ${{ github.run_number }}"
-
-      - name: Verify on Unix
-        if: runner.os != 'Windows'
-        run: |
-          chmod +x mvnw
-          ./mvnw -B verify
-
-      - name: Verify on Windows
-        if: runner.os == 'Windows'
-        run: .\mvnw.cmd -B verify
-
-      - name: Upload JAR
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: jar-${{ matrix.os }}-${{ github.run_number }}
-          path: target/*.jar
-          if-no-files-found: error
+kzp-lab-andrushko 1.1.0
 ```
+
+GitHub Actions (успадкований ci.yml) запускає старі й нові тести на трьох ОС і публікує JAR: посилання на запуск CI та артефакт – вставити після push.
 
 ## GitHub Issues і Pull Request
-
-Роботу сплановано такими Issues (номери присвоює GitHub під час створення; зв'язок із PR – через Closes #N в описі):
 
 *Таблиця 2 – План GitHub Issues → зміна → перевірка*
 
 | Issue | Мітка | Зміна | Перевірка |
 |---|---|---|---|
-| Налаштування лабораторної роботи №1 | infra | структура каталогів, службові файли | README, .gitignore |
-| Налаштувати Maven-проєкт | infra | pom.xml, Maven Wrapper | mvnw.cmd test |
-| Налаштувати аналізатор і пакування | infra | SpotBugs у verify, Shade | mvnw.cmd verify, JAR |
-| Налаштувати GitHub Actions | infra | ci.yml, матриця 3 ОС | зелений CI |
-| Реалізувати читання й перевірку записів | feature | TrainingProcessor.validate | тести хибних рядків |
-| Сформувати звіт | feature | formatReport, FileReport | консоль + out/report.txt |
-| [bug] SpotBugs OS_OPEN_STREAM у Main | bug | PrintStream у try-with-resources | verify без помилок |
-| Додати документацію | docs | README, javadoc, REPORT | рев'ю PR |
+| Клас-сутність Training | feature | private final поля, геттери, toString | TrainingTest |
+| Валідація в конструкторі | feature | інваріанти, requireNonNull, isFinite | негативні тести |
+| Фабрика fromCsv | feature | розбір структури, LocalDate | тести fromCsv |
+| Record DurationDistance | feature | підсумок замість double[] | тест рівності |
+| Збереження поведінки ЛР1 | infra | фасад TrainingProcessor | 10 тестів ЛР1 без змін, порівняння звітів |
+| Документація ЛР2 | docs | README, javadoc, REPORT | рев'ю PR |
 
-Знайдений дефект. Під час першого запуску mvnw.cmd verify SpotBugs зупинив збірку:
+Pull Request lab02 → main містить опис перебудови, результати verify і Closes #N для наведених Issues.
 
-*Лістинг 6 – Перший запуск verify*
+## Порівняння поведінки
 
-```text
-[ERROR] Medium: ua.lpnu.kzp.Main.main(String[]) may fail to close stream [ua.lpnu.kzp.Main] At Main.java:[line 27] OS_OPEN_STREAM
-[INFO] BUILD FAILURE
-```
+Контрольний вхідний файл ЛР1 оброблено версіями 1.0.0 і 1.1.0. Команда Compare-Object (PowerShell) для out/report.txt обох версій не знайшла жодної відмінності: кількість записів, показники, порядок рядків і повідомлення про помилки однакові.
 
-Кроки відтворення: виконати mvnw.cmd verify. Очікуваний результат: BUILD SUCCESS. Фактичний результат: BUILD FAILURE через незакритий PrintStream. Виправлення: потік створюється в try-with-resources, а логіка програми винесена в метод run(args, out). Після виправлення SpotBugs повідомляє «No errors/warnings found».
-
-## Приклади роботи
-
-*Лістинг 7 – Вхідні дані data/input.csv*
-
-```text
-2026-09-01;біг;45;8.50;520
-2026-09-02;велосипед;90;32.00;780
-2026-09-03;плавання;40;1.50;410
-2026-09-05;біг;30;8.50;350
-2026-09-06;тренажери;60;0.00;450
-
-2026-09-08;ходьба;75;6.80;300
-2026-09-08;велосипед;120;41.30;820
-2026-09-10;біг;45;10.00;610
-2026-09-11;біг;-20;4.00;300
-2026-09-12;;50;6.00;400
-2026-09-13;плавання;сорок;1.20;380
-2026-09-14;біг;40;7.00
-```
-
-Рядок 6 порожній; рядки 10–13 містять від'ємне значення, порожній вид, нечислове поле «сорок» та неправильну кількість полів.
-
-*Лістинг 8 – Консольний вивід java -jar target/kzp-lab-andrushko-1.0.0.jar*
+*Лістинг 7 – Вивід версії 1.1.0 (ідентичний ЛР1)*
 
 ```text
 Звіт: спортивні тренування
@@ -507,225 +410,93 @@ jobs:
 Звіт записано у out\report.txt
 ```
 
-*Лістинг 9 – Режим --help*
-
-```text
-Використання: java -jar kzp-lab-andrushko.jar [--help] [--version] [--input <файл>] [--output <файл>]
-```
-
-*Лістинг 10 – Режим --version*
-
-```text
-kzp-lab-andrushko 1.0.0
-```
-
-Файл out/report.txt містить той самий текст звіту, що й консоль (без останнього рядка «Звіт записано у …»), бо обидва приймачі отримують один рядок, сформований formatReport. Перевірка вручну: 45 + 90 + 40 + 30 + 60 + 75 + 120 + 45 = 505 хв; 8.5 + 32 + 1.5 + 8.5 + 0 + 6.8 + 41.3 + 10 = 108.6 км; максимум калорій – 820.
-
-## Тестування
-
-Виконані команди: mvnw.cmd test, mvnw.cmd verify, mvnw.cmd package, запуск JAR у трьох режимах. Тести покривають коректний рядок з українським текстом, порожній рядок, неправильну кількість полів, нечислове поле, від'ємне значення, порожній вид, обчислення сум і максимуму для кількох записів, файл без коректних записів, форматування з крапкою незалежно від локалі та запис/читання UTF-8 через тимчасовий каталог.
-
-*Лістинг 11 – Результат mvnw.cmd -B clean verify*
-
-```text
-[INFO] Building kzp-lab-andrushko 1.0.0
-[INFO] Tests run: 10, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.143 s -- in ua.lpnu.kzp.TrainingProcessorTest
-[INFO] Tests run: 10, Failures: 0, Errors: 0, Skipped: 0
-[INFO] Building jar: C:\Users\user\kzp-labs\lab01\target\kzp-lab-andrushko-1.0.0.jar
-[INFO] BugInstance size is 0
-[INFO] No errors/warnings found
-[INFO] BUILD SUCCESS
-```
-
-*Лістинг 12 – src/test/java/ua/lpnu/kzp/TrainingProcessorTest.java*
-
-```text
-package ua.lpnu.kzp;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.List;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
-
-class TrainingProcessorTest {
-    /* Перевіряє, що коректний рядок з українським видом проходить перевірку. */
-    @Test
-    void acceptsValidLineWithUkrainianText() {
-        assertNull(TrainingProcessor.validate("2026-09-01;біг;45;8.50;520"));
-    }
-
-    /* Перевіряє відхилення порожнього рядка. */
-    @Test
-    void rejectsBlankLine() {
-        assertEquals("порожній рядок", TrainingProcessor.validate("   "));
-    }
-
-    /* Перевіряє відхилення неправильної кількості полів. */
-    @Test
-    void rejectsWrongFieldCount() {
-        assertTrue(TrainingProcessor.validate("2026-09-14;біг;40;7.00").startsWith("очікується 5"));
-    }
-
-    /* Перевіряє відхилення нечислового поля. */
-    @Test
-    void rejectsNonNumericField() {
-        assertEquals("числове поле має помилковий формат",
-                TrainingProcessor.validate("2026-09-13;плавання;сорок;1.20;380"));
-    }
-
-    /* Перевіряє відхилення від'ємного значення. */
-    @Test
-    void rejectsNegativeValue() {
-        assertEquals("від'ємне числове значення",
-                TrainingProcessor.validate("2026-09-11;біг;-20;4.00;300"));
-    }
-
-    /* Перевіряє відхилення порожнього текстового поля. */
-    @Test
-    void rejectsEmptyKind() {
-        assertEquals("порожня дата або вид тренування",
-                TrainingProcessor.validate("2026-09-12;;50;6.00;400"));
-    }
-
-    /* Перевіряє обчислення сум і максимуму для кількох записів. */
-    @Test
-    void computesStatsForSeveralRecords() {
-        double[] stats = TrainingProcessor.computeStats(List.of(
-                "2026-09-01;біг;45;8.50;520",
-                "2026-09-02;велосипед;90;32.00;780"));
-        assertEquals(2, stats[TrainingProcessor.COUNT], 0.0001);
-        assertEquals(135, stats[TrainingProcessor.TOTAL_MINUTES], 0.0001);
-        assertEquals(40.5, stats[TrainingProcessor.TOTAL_DISTANCE], 0.0001);
-        assertEquals(780, stats[TrainingProcessor.MAX_CALORIES], 0.0001);
-    }
-
-    /* Перевіряє файл без коректних записів. */
-    @Test
-    void handlesFileWithoutValidRecords() {
-        List<String> valid = new ArrayList<>();
-        List<String> errors = TrainingProcessor.splitValid(List.of("", "a;b"), valid);
-        assertTrue(valid.isEmpty());
-        assertEquals(2, errors.size());
-        assertEquals(0, TrainingProcessor.computeStats(valid)[TrainingProcessor.COUNT], 0.0001);
-    }
-
-    /* Перевіряє, що звіт не залежить від локалі та використовує крапку. */
-    @Test
-    void formatsReportWithDot() {
-        String report = TrainingProcessor.formatReport(new double[] {1, 45, 8.5, 520}, List.of());
-        assertTrue(report.contains("8.50"));
-    }
-
-    /* Перевіряє запис і читання звіту в UTF-8. */
-    @Test
-    void writesAndReadsUtf8(@TempDir Path directory) throws Exception {
-        Path output = directory.resolve("out").resolve("report.txt");
-        FileReport.writeReport(output, "Звіт: біг\n");
-        assertEquals(List.of("Звіт: біг"), FileReport.readLines(output));
-        assertTrue(Files.exists(output));
-    }
-}
-```
-
-CI на трьох ОС: посилання на успішний запуск GitHub Actions та артефакт jar – вставити після push.
-
-## Документація
-
-Javadoc мають публічні класи Main, TrainingProcessor, FileReport, метод main, run, усі публічні методи (validate, splitValid, computeStats, formatReport, readLines, writeReport) і константи індексів показників. README.md описує призначення, формат входу, команди збирання та запуску.
-
 ## Академічна доброчесність
 
 Заповніть самостійно: використані інструменти ШІ або твердження, що вони не використовувалися; ролі, запити, прийняті й відхилені рекомендації; власний внесок і підтвердження розуміння всього поданого коду.
 
 ## Відповіді на контрольні питання
 
-1. Яке призначення файла pom.xml?
+1. Яку проблему розв'язує клас-сутність порівняно з рядком і паралельними змінними?
 
-Це опис проєкту для Maven: координати артефакта (groupId, artifactId, version), версія Java, кодування, залежності та плагіни збірки. Maven нічого не вгадує з каталогів – усе, що потрібно для збирання, тестування й пакування, задано в pom.xml.
+Поля отримують імена й типи (getMinutes() замість fields[2]), правила перевірки зосереджено в одному місці, а некоректний об'єкт неможливо створити.
 
-2. Чим відрізняються фази test, verify і package у Maven?
+2. Що означають private і final у полях класу?
 
-test компілює код і запускає модульні тести. package після тестів створює JAR. verify іде після package і виконує додаткові перевірки якості – у моєму проєкті SpotBugs. Виклик пізнішої фази автоматично виконує всі попередні.
+private закриває прямий доступ ззовні класу, final забороняє повторне присвоєння після конструктора. Разом вони роблять стан Training незмінним.
 
-3. Навіщо потрібен Maven Wrapper?
+3. Що таке інкапсуляція і яку проблему вона запобігає?
 
-Щоб будь-хто міг зібрати проєкт однією і тією ж версією Maven без глобальної установки. Скрипти mvnw/mvnw.cmd завантажують версію з maven-wrapper.properties (3.9.11) під час першого запуску. JDK при цьому все одно потрібен.
+Приховування внутрішнього представлення з наданням лише дозволених операцій. Вона не дає зовнішньому коду записати в об'єкт від'ємні хвилини чи порожній вид.
 
-4. Яку роль відіграє метод main?
+4. Чому перевірку інваріантів розміщують у конструкторі?
 
-Це точка входу: JVM викликає public static void main(String[] args) під час запуску класу або JAR. У моїй програмі main створює UTF-8 потік виводу й передає аргументи методу run.
+Конструктор – єдиний шлях створення об'єкта, тому хибне значення відхиляється до того, як об'єкт потрапить у список чи статистику.
 
-5. Чим примітивний тип відрізняється від String?
+5. Чим Objects.requireNonNull відрізняється від isBlank?
 
-Примітив (int, double, boolean) зберігає саме значення і не може бути null. String – посилальний тип: змінна містить посилання на незмінний об'єкт рядка, має методи (split, isBlank) і може бути null.
+requireNonNull перевіряє відсутність значення (null) і кидає NullPointerException; isBlank перевіряє наявний рядок на порожність або пробіли.
 
-6. Чому середнє потрібно обчислювати в double, навіть якщо сума й кількість мають тип int?
+6. Чому відсутність сеттерів може допомогти зберегти коректний стан?
 
-Ділення int на int – цілочислове й відкидає дробову частину: 7 / 2 = 3. Приведення (double) total / count дає 3.5.
+Немає способу змінити поле після перевірки в конструкторі, тож інваріант виконується протягом усього життя об'єкта.
 
-7. Що станеться, якщо Integer.parseInt отримати рядок "abc"?
+7. Які методи й властивості автоматично отримує record?
 
-Буде кинуто NumberFormatException. У моїй програмі цей виняток перехоплюється для одного рядка, і формується повідомлення «Рядок 12: числове поле має помилковий формат».
+Канонічний конструктор, private final поля, методи доступу з іменами компонентів (count()), equals, hashCode і toString.
 
-8. Чому не можна мовчки пропускати рядок із помилкою?
+8. Чим record відрізняється від звичайного класу-сутності?
 
-Користувач не дізнається, що дані втрачено, а показники стануть неправильними без пояснень. Тому звіт містить номер рядка й причину пропуску.
+Record – компактний носій даних із фіксованим набором компонентів і значеннєвою рівністю; він не може мати інших полів екземпляра і не успадковується. Клас-сутність може мати довільну поведінку, приховані поля й власні правила.
 
-9. Як String.split(";", -1) обробляє порожнє останнє поле?
+9. Чому record не гарантує глибоку незмінність змінного списку?
 
-Від'ємний ліміт зберігає порожні поля наприкінці, тому a;b; дає 3 елементи. Без -1 Java відкинула б порожній хвіст, і рядок із порожнім останнім полем виглядав би як рядок з меншою кількістю полів.
+Record зберігає посилання на список, а не копію; вміст списку можна змінити через інше посилання. Потрібна явна List.copyOf.
 
-10. Чому для шляхів краще використовувати Path.of, а не "data\\input.csv"?
+10. Для чого потрібен статичний фабричний метод fromCsv?
 
-Path.of("data", "input.csv") сам підставляє роздільник поточної ОС. Рядок із зворотною скісною рискою працює лише на Windows.
+Назва пояснює джерело даних, метод приховує розбір полів і перетворення типів, а конструктор залишається відповідальним лише за інваріанти.
 
-11. Навіщо явно задавати StandardCharsets.UTF_8?
+11. Де потрібно перехоплювати помилку розбору одного рядка?
 
-Стандартне кодування залежить від ОС (на Windows часто windows-1251 або 1252). Без явного UTF-8 українські символи прочиталися б неправильно.
+У циклі читання (parseAll), де відомий номер рядка: виняток перетворюється на повідомлення «Рядок N: причина», і обробка продовжується.
 
-12. Чим %n відрізняється від \n у форматованому виводі?
+12. Чому неправильний запис не можна додавати до списку до завершення перевірки?
 
-%n підставляє роздільник рядка поточної ОС (CRLF на Windows, LF на Unix), а \n – завжди LF.
+Інакше він вплинув би на суми й максимум. У моєму коді add виконується лише з результатом успішного fromCsv; це перевіряє тест invalidLineDoesNotChangeStatistics.
 
-13. Які дані потрібно перевірити у вашому варіанті?
+13. Яке призначення toString і чому він не замінює формат CSV?
 
-Кількість полів (5), непорожні дату й вид, числові хвилини/дистанцію/калорії, невід'ємні значення, скінченну дистанцію, порожні рядки та наявність хоча б одного коректного запису.
+toString дає зрозуміле подання для звіту й налагодження; його формат («45 хв, 8.50 км») не призначений для зворотного розбору, тому CSV формується окремо.
 
-14. Які тести виявлять помилку в обчисленні середнього?
+14. Навіщо використовувати Locale.ROOT у toString і звіті?
 
-Тест на кілька записів, у якому сума не ділиться націло на кількість (очікуване значення з дробовою частиною), а також тест на порожній набір (ділення на нуль). У моєму варіанті середнього немає, тому аналогічно перевіряються суми й максимум.
+Щоб десятковий роздільник завжди був крапкою, незалежно від регіональних налаштувань Windows (у українській локалі – кома).
 
-15. Яке призначення статичного аналізатора?
+15. Що означає схема тесту AAA?
 
-Він шукає типові дефекти без запуску програми. SpotBugs аналізує байт-код і в цій роботі знайшов реальну проблему – незакритий потік OS_OPEN_STREAM.
+Arrange – підготувати дані, Act – виконати дію, Assert – перевірити результат.
 
-16. Яку роль виконує GitHub Actions?
+16. Які негативні випадки потрібно перевірити для конструктора?
 
-Автоматично запускає ту саму команду verify на Windows, macOS та Ubuntu для кожного push і PR, тобто виконує continuous integration, і публікує JAR як артефакт.
+null і порожній вид, null-дата, від'ємні хвилини/дистанція/калорії, NaN і нескінченна дистанція.
 
-17. Що має містити GitHub Issue на дефект?
+17. Як довести, що рефакторинг не змінив зовнішню поведінку попередньої роботи?
 
-Опис, кроки відтворення, очікуваний і фактичний результати. Форма bug.yml робить ці поля обов'язковими.
+Обробити той самий контрольний файл обома версіями й порівняти звіти, а також запустити старі тести без змін. Обидві перевірки виконано.
 
-18. Що Ви повинні вказати у розділі звіту про академічну доброчесність?
+18. Чому тести попередньої роботи мають проходити після цієї роботи?
 
-Які інструменти ШІ використовувалися (або що не використовувалися), ролі, запити, прийняті рекомендації, виправлені помилки та підтвердження розуміння коду.
+Вони фіксують контракт продукту; падіння старого тесту означало б зміну поведінки, а не лише внутрішньої моделі.
 
-19. Яку роботу виконує агент DevOps, а яку – агент Валідатор?
+19. Які файли інфраструктури переносяться з попередньої роботи без повторного створення?
 
-DevOps консультує щодо pom.xml, Wrapper, аналізатора, JAR і Actions та допомагає діагностувати помилки збірки. Валідатор складає крайові випадки, перевіряє результати й оформлює дефекти як Issues.
+pom.xml (змінено лише версію), mvnw, mvnw.cmd, .mvn/wrapper, ci.yml, форми Issues, шаблон PR, .gitignore, .gitattributes, .editorconfig.
 
-20. Який рядок вашої програми найскладніше пояснити і чому?
+20. Який рядок Вашої реалізації найкраще демонструє інкапсуляцію і чому?
 
-line.split(";", -1): без розуміння другого аргументу неочевидно, чому рядок 2026-09-14;біг;40;7.00; дав би 5 полів, а без -1 – лише 4.
+private final int minutes; разом із перевіркою if (minutes < 0 …) throw у конструкторі: поле неможливо ні прочитати напряму, ні змінити, ні отримати від'ємним.
 
 ## Висновки
 
-Створено публічний за структурою Maven-проєкт із Wrapper, JUnit 5, SpotBugs, виконуваним JAR і CI на трьох ОС. Програма коректно обробляє 8 записів журналу тренувань, відкидає 5 хибних рядків із поясненням і формує однаковий звіт у консоль та файл. Усі 10 тестів проходять, SpotBugs не має зауважень після виправлення знайденого дефекту. Масиви рядків і паралельні змінні цієї версії стануть основою для ЛР2, де їх буде замінено класом-сутністю та record.
+Рядкові записи ЛР1 замінено незмінним класом Training з перевіркою інваріантів, фабрикою fromCsv і record DurationDistance. Зовнішній звіт збігся з попередньою версією побайтово, 22 тести (10 старих і 12 нових) проходять, SpotBugs не має зауважень. Клас-сутність стане основою ЛР3, де його буде розділено на підтипи з поліморфною поведінкою.
 
