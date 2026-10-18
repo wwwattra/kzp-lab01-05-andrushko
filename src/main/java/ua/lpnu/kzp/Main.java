@@ -6,13 +6,14 @@ import java.io.IOException;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 
 /** Консольна програма обробки журналу спортивних тренувань (варіант 2). */
 public final class Main {
     /** Версія програми, узгоджена з pom.xml і Git-тегом. */
-    public static final String VERSION = "1.2.0";
+    public static final String VERSION = "1.3.0";
 
     /* Забороняє створення екземплярів класу точки входу. */
     private Main() {
@@ -67,7 +68,9 @@ public final class Main {
                 out.printf("У файлі %s немає жодного коректного запису%n", input);
             }
             String report = TrainingProcessor.formatReport(DurationDistance.of(trainings), errors)
-                    + TrainingProcessor.formatLoadSection(trainings);
+                    + TrainingProcessor.formatLoadSection(trainings)
+                    + TrainingProcessor.formatQueriesSection(trainings,
+                            List.of(LocalDate.of(2026, 9, 8), LocalDate.of(2026, 9, 30)));
             out.print(report);
             FileReport.writeReport(output, report);
             out.printf("Звіт записано у %s%n", output);
