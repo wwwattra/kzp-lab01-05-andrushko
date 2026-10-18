@@ -1,8 +1,11 @@
 package ua.lpnu.kzp;
 
 import java.util.ArrayList;
+import java.util.EnumMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 /**
  * Читає список тренувань із рядків і формує звіт.
@@ -94,6 +97,45 @@ public final class TrainingProcessor {
         DurationDistance summary = DurationDistance.of(trainings);
         return new double[] {summary.count(), summary.totalMinutes(),
             summary.totalDistance(), summary.maxCalories()};
+    }
+
+    /**
+     * Обчислює сумарне навантаження через поліморфний метод без перевірки підтипу.
+     *
+     * @param trainings тренування різних підтипів
+     * @return сума {@link Training#load()}
+     */
+    public static double totalLoad(List<Training> trainings) {
+        double total = 0.0;
+        for (Training training : trainings) {
+            // Реалізацію load() обирає JVM за фактичним підтипом об'єкта.
+            total += training.load();
+        }
+        return total;
+    }
+
+    /**
+     * Формує розділ звіту про навантаження за видами та унікальні записи.
+     *
+     * @param trainings коректні тренування
+     * @return текст розділу
+     */
+    public static String formatLoadSection(List<Training> trainings) {
+        Map<TrainingKind, Double> byKind = new EnumMap<>(TrainingKind.class);
+        for (Training training : trainings) {
+            byKind.merge(training.getTrainingKind(), training.load(), Double::sum);
+        }
+        StringBuilder section = new StringBuilder();
+        section.append(String.format(Locale.ROOT, "Навантаження (поліморфний розрахунок load), бали%n"));
+        for (Map.Entry<TrainingKind, Double> entry : byKind.entrySet()) {
+            section.append(String.format(Locale.ROOT, "  %-32s %10.2f%n",
+                    entry.getKey().label() + (entry.getKey().isOutdoor() ? " (надворі)" : " (у приміщенні)"),
+                    entry.getValue()));
+        }
+        section.append(String.format(Locale.ROOT, "  %-32s %10.2f%n", "Усього", totalLoad(trainings)));
+        section.append(String.format(Locale.ROOT, "Унікальних тренувань (HashSet): %d%n",
+                new HashSet<>(trainings).size()));
+        return section.toString();
     }
 
     /**
