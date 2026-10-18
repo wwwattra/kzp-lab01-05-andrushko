@@ -1,0 +1,23 @@
+name: Bug
+description: Повідомити про дефект
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: steps
+    attributes:
+      label: Кроки відтворення
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Очікуваний результат
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Фактичний результат
+    validations:
+      required: true
