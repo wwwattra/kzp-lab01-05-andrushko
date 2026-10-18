@@ -5,14 +5,14 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Перевіряє рядки про спортивні тренування, обчислює показники та формує звіт.
+ * Читає список тренувань із рядків і формує звіт.
  *
- * <p>Формат рядка: {@code date;kind;minutes;distanceKm;calories}.
+ * <p>Після ЛР2 правила перевірки зосереджено в {@link Training}; методи ЛР1 збережено як
+ * тонкий фасад, щоб попередні тести проходили без змін.
  */
 public final class TrainingProcessor {
     /** Кількість полів у коректному рядку. */
-    public static final int FIELD_COUNT = 5;
-
+    public static final int FIELD_COUNT = Training.FIELD_COUNT;
     /** Індекс показника «кількість коректних записів» у масиві статистики. */
     public static final int COUNT = 0;
     /** Індекс показника «сумарний час, хв». */
@@ -33,57 +33,39 @@ public final class TrainingProcessor {
      * @return текст причини або {@code null}, якщо рядок коректний
      */
     public static String validate(String line) {
-        if (line == null || line.isBlank()) {
-            return "порожній рядок";
-        }
-        // -1 зберігає порожні поля наприкінці рядка.
-        String[] fields = line.split(";", -1);
-        if (fields.length != FIELD_COUNT) {
-            return "очікується %d полів, отримано %d".formatted(FIELD_COUNT, fields.length);
-        }
-        if (fields[0].isBlank() || fields[1].isBlank()) {
-            return "порожня дата або вид тренування";
-        }
         try {
-            int minutes = Integer.parseInt(fields[2].trim());
-            double distance = Double.parseDouble(fields[3].trim());
-            int calories = Integer.parseInt(fields[4].trim());
-            if (minutes < 0 || distance < 0 || calories < 0) {
-                return "від'ємне числове значення";
-            }
-            if (!Double.isFinite(distance)) {
-                return "дистанція має бути скінченним числом";
-            }
-        } catch (NumberFormatException exception) {
-            return "числове поле має помилковий формат";
+            Training.fromCsv(line);
+            return null;
+        } catch (IllegalArgumentException exception) {
+            return exception.getMessage();
         }
-        return null;
     }
 
     /**
-     * Обчислює чотири показники варіанта за коректними рядками.
+     * Перетворює рядки на тренування; хибний рядок не потрапляє до списку.
      *
-     * @param validLines рядки, що пройшли {@link #validate(String)}
-     * @return масив {кількість, сумарний час, сумарна дистанція, максимум калорій}
+     * @param lines усі рядки файла
+     * @param trainings список, до якого додаються коректні тренування
+     * @return повідомлення про пропущені рядки з номером і причиною
      */
-    public static double[] computeStats(List<String> validLines) {
-        double[] stats = new double[4];
-        for (String line : validLines) {
-            String[] fields = line.split(";", -1);
-            stats[COUNT]++;
-            stats[TOTAL_MINUTES] += Integer.parseInt(fields[2].trim());
-            stats[TOTAL_DISTANCE] += Double.parseDouble(fields[3].trim());
-            stats[MAX_CALORIES] = Math.max(stats[MAX_CALORIES], Integer.parseInt(fields[4].trim()));
+    public static List<String> parseAll(List<String> lines, List<Training> trainings) {
+        List<String> errors = new ArrayList<>();
+        for (int lineNumber = 1; lineNumber <= lines.size(); lineNumber++) {
+            try {
+                trainings.add(Training.fromCsv(lines.get(lineNumber - 1)));
+            } catch (IllegalArgumentException exception) {
+                errors.add("Рядок %d: %s".formatted(lineNumber, exception.getMessage()));
+            }
         }
-        return stats;
+        return errors;
     }
 
     /**
-     * Розділяє вхідні рядки на коректні та повідомлення про помилки.
+     * Розділяє рядки на коректні та помилки (сумісність із ЛР1).
      *
      * @param lines усі рядки файла
      * @param valid список, до якого додаються коректні рядки
-     * @return повідомлення про пропущені рядки з номером і причиною
+     * @return повідомлення про пропущені рядки
      */
     public static List<String> splitValid(List<String> lines, List<String> valid) {
         List<String> errors = new ArrayList<>();
@@ -99,25 +81,51 @@ public final class TrainingProcessor {
     }
 
     /**
-     * Формує текст звіту, незалежний від локалі операційної системи.
+     * Обчислює показники за коректними рядками (сумісність із ЛР1).
      *
-     * @param stats показники з {@link #computeStats(List)}
+     * @param validLines коректні рядки
+     * @return масив {кількість, сумарний час, сумарна дистанція, максимум калорій}
+     */
+    public static double[] computeStats(List<String> validLines) {
+        List<Training> trainings = new ArrayList<>();
+        for (String line : validLines) {
+            trainings.add(Training.fromCsv(line));
+        }
+        DurationDistance summary = DurationDistance.of(trainings);
+        return new double[] {summary.count(), summary.totalMinutes(),
+            summary.totalDistance(), summary.maxCalories()};
+    }
+
+    /**
+     * Формує звіт із масиву показників (сумісність із ЛР1).
+     *
+     * @param stats показники
      * @param errors повідомлення про пропущені рядки
-     * @return готовий текст звіту
+     * @return текст звіту
      */
     public static String formatReport(double[] stats, List<String> errors) {
+        return formatReport(new DurationDistance((int) stats[COUNT], (int) stats[TOTAL_MINUTES],
+                stats[TOTAL_DISTANCE], (int) stats[MAX_CALORIES]), errors);
+    }
+
+    /**
+     * Формує текст звіту, незалежний від локалі операційної системи.
+     *
+     * @param summary підсумкові показники
+     * @param errors повідомлення про пропущені рядки
+     * @return текст звіту
+     */
+    public static String formatReport(DurationDistance summary, List<String> errors) {
         StringBuilder report = new StringBuilder();
         String nl = System.lineSeparator();
         report.append("Звіт: спортивні тренування").append(nl);
         report.append(String.format(Locale.ROOT, "%-34s %10s%n", "Показник", "Значення"));
-        report.append(String.format(Locale.ROOT, "%-34s %10d%n",
-                "Коректних записів", (long) stats[COUNT]));
-        report.append(String.format(Locale.ROOT, "%-34s %10d%n",
-                "Сумарний час, хв", (long) stats[TOTAL_MINUTES]));
+        report.append(String.format(Locale.ROOT, "%-34s %10d%n", "Коректних записів", summary.count()));
+        report.append(String.format(Locale.ROOT, "%-34s %10d%n", "Сумарний час, хв", summary.totalMinutes()));
         report.append(String.format(Locale.ROOT, "%-34s %10.2f%n",
-                "Сумарна дистанція, км", stats[TOTAL_DISTANCE]));
+                "Сумарна дистанція, км", summary.totalDistance()));
         report.append(String.format(Locale.ROOT, "%-34s %10d%n",
-                "Найбільша витрата калорій, ккал", (long) stats[MAX_CALORIES]));
+                "Найбільша витрата калорій, ккал", summary.maxCalories()));
         report.append(String.format(Locale.ROOT, "Пропущено рядків: %d%n", errors.size()));
         for (String error : errors) {
             report.append(error).append(nl);

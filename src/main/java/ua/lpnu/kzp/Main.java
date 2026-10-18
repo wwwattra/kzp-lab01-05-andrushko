@@ -12,7 +12,7 @@ import java.util.List;
 /** Консольна програма обробки журналу спортивних тренувань (варіант 2). */
 public final class Main {
     /** Версія програми, узгоджена з pom.xml і Git-тегом. */
-    public static final String VERSION = "1.0.0";
+    public static final String VERSION = "1.1.0";
 
     /* Забороняє створення екземплярів класу точки входу. */
     private Main() {
@@ -61,13 +61,12 @@ public final class Main {
         }
         try {
             List<String> lines = FileReport.readLines(input);
-            List<String> valid = new ArrayList<>();
-            List<String> errors = TrainingProcessor.splitValid(lines, valid);
-            if (valid.isEmpty()) {
+            List<Training> trainings = new ArrayList<>();
+            List<String> errors = TrainingProcessor.parseAll(lines, trainings);
+            if (trainings.isEmpty()) {
                 out.printf("У файлі %s немає жодного коректного запису%n", input);
             }
-            String report = TrainingProcessor.formatReport(
-                    TrainingProcessor.computeStats(valid), errors);
+            String report = TrainingProcessor.formatReport(DurationDistance.of(trainings), errors);
             out.print(report);
             FileReport.writeReport(output, report);
             out.printf("Звіт записано у %s%n", output);
