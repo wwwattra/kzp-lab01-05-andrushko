@@ -1,36 +1,34 @@
-# Звіт до лабораторної роботи №2
+# Звіт до лабораторної роботи №3
 
-з дисципліни «Кросплатформні засоби програмування», тема «Класи, record і інкапсуляція в Java-проєкті». Варіант 2. Спортивні тренування.
+з дисципліни «Кросплатформні засоби програмування», тема «Спадкування, інтерфейси й поліморфізм у Java-проєкті». Варіант 2. Спортивні тренування.
 Виконав: студент групи КІ-302 Андрушко А. І. Прийняв: Олексів М. В.
 
 ## Тема, номер і варіант
 
-Лабораторна робота № 2 «Класи, record і інкапсуляція в Java-проєкті». Варіант 2 – «Спортивні тренування» (незмінний з ЛР1). ОС – Windows 10 (64-bit), JDK Temurin 21.0.12, Maven 3.9.11 через Wrapper. Версія продукту – 1.1.0.
+Лабораторна робота № 3 «Спадкування, інтерфейси й поліморфізм у Java-проєкті». Варіант 2 – «Спортивні тренування». ОС – Windows 10 (64-bit), JDK Temurin 21.0.12, Maven 3.9.11 через Wrapper. Версія продукту – 1.2.0.
 
-Посилання на GitHub-репозиторій: https://github.com/[ваш-логін]/kzp-lab-andrushko, гілка lab02, Git-тег v1.1.0.
+Посилання на GitHub-репозиторій: https://github.com/[ваш-логін]/kzp-lab-andrushko, гілка lab03, Git-тег v1.2.0.
 
 ## Мета роботи
 
-Перебудувати предметну частину продукту ЛР1: замість рядків, масивів і паралельних змінних використати клас-сутність Training з інкапсульованим незмінним станом, перевірку інваріантів у конструкторі, статичний фабричний метод fromCsv, record DurationDistance для підсумку та тести, які підтверджують збереження поведінки. Інфраструктура ЛР1 (Wrapper, JUnit, SpotBugs, Shade, CI) успадкована без змін.
+Розширити класову модель: винести спільні поля й інваріанти до абстрактного базового типу Training, створити підтипи IndoorTraining і OutdoorTraining з різною реалізацією поліморфної операції load() (розрахунок навантаження), додати enum TrainingKind, реалізувати узгоджені equals/hashCode та обробляти різнорідні об'єкти через спільний тип без розгалуження за підтипом.
 
 ## Стан до і після цієї роботи
 
-*Таблиця 1 – Що замінено*
+*Таблиця 1 – Що додано до моделі ЛР2*
 
-| Елемент | ЛР1 | ЛР2 |
+| Ознака | ЛР2 | ЛР3 |
 |---|---|---|
-| Один запис | рядок і fields[2], fields[3]… | об'єкт Training |
-| Перевірка | метод validate з умовами над масивом | конструктор + Training.fromCsv |
-| Набір даних | List<String> коректних рядків | List<Training> |
-| Підсумок | масив double[4] з індексами | record DurationDistance |
-| Дата | текст без розбору | LocalDate (YYYY-MM-DD) |
-| Звіт | formatReport(double[], …) | formatReport(DurationDistance, …) – той самий текст |
+| Запис | об'єкт final-класу Training | об'єкт одного з підтипів |
+| Спільні поля | у класі-сутності | в абстрактному базовому класі |
+| Вид тренування | довільний String | enum TrainingKind (5 значень) |
+| Відмінна поведінка | відсутня | перевизначений load() |
+| Рівність | посилальна (Object) | узгоджені equals/hashCode |
+| Звіт | 4 показники | 4 показники без змін + розділ навантаження |
 
-Методи ЛР1 (validate, splitValid, computeStats, formatReport(double[])) збережено як тонкий фасад над новими класами, тому 10 тестів ЛР1 проходять без жодної зміни.
+## Базовий тип
 
-## Клас-сутність
-
-Training – final-клас із полями private final: LocalDate date, String kind, int minutes, double distanceKm, int calories. Сеттерів немає: тренування після запису в журнал не змінюється, тому незмінний об'єкт виключає появу неперевірених значень. Інваріанти (з таблиці варіантів): дата й вид не порожні (Objects.requireNonNull для null, isBlank для порожнього тексту); хвилини, дистанція й калорії >= 0; дистанція скінченна (Double.isFinite відкидає NaN та нескінченність). Методи читання – getDate, getKind, getMinutes, getDistanceKm, getCalories. toString форматує запис через Locale.ROOT: 2026-09-01 біг: 45 хв, 8.50 км, 520 ккал.
+Training – абстрактний клас (обрано саме клас, а не інтерфейс, бо підтипи мають спільний стан і готову реалізацію геттерів, рівності та toString). Поля: date, kind (TrainingKind), minutes, distanceKm, calories – private final. Захищений конструктор перевіряє спільні інваріанти (null, від'ємні, нескінченна дистанція) у статичному методі validateNumbers ще до входу в тіло конструктора. Абстрактний метод double load() – поліморфна операція варіанта «розрахунок навантаження». Фабрика create/fromCsv обирає підтип один раз – на межі створення об'єкта.
 
 *Лістинг 1 – src/main/java/ua/lpnu/kzp/Training.java*
 
@@ -42,53 +40,93 @@ import java.time.format.DateTimeParseException;
 import java.util.Locale;
 import java.util.Objects;
 
-/** Описує незмінний запис про одне спортивне тренування. */
-public final class Training {
+/**
+ * Спільний абстрактний тип тренування.
+ *
+ * <p>Базовий клас зберігає спільні поля та інваріанти, а підтипи реалізують
+ * поліморфну операцію {@link #load()} — розрахунок навантаження.
+ */
+public abstract class Training {
     /** Кількість полів у CSV-рядку. */
     public static final int FIELD_COUNT = 5;
 
     private final LocalDate date;
-    private final String kind;
+    private final TrainingKind kind;
     private final int minutes;
     private final double distanceKm;
     private final int calories;
 
     /**
-     * Створює коректне тренування після перевірки інваріантів.
+     * Створює тренування з перевіреним спільним станом.
      *
      * @param date дата тренування
-     * @param kind вид тренування, не порожній
-     * @param minutes тривалість у хвилинах, не від'ємна
-     * @param distanceKm дистанція в кілометрах, не від'ємна й скінченна
+     * @param kind вид тренування
+     * @param minutes тривалість, хв, не від'ємна
+     * @param distanceKm дистанція, км, не від'ємна й скінченна
      * @param calories витрата калорій, не від'ємна
-     * @throws IllegalArgumentException якщо порушено інваріант
      */
-    public Training(LocalDate date, String kind, int minutes, double distanceKm, int calories) {
-        this.date = Objects.requireNonNull(date, "Дата не може бути null");
-        this.kind = Objects.requireNonNull(kind, "Вид не може бути null");
-        if (kind.isBlank()) {
-            throw new IllegalArgumentException("порожня дата або вид тренування");
-        }
+    protected Training(LocalDate date, TrainingKind kind, int minutes, double distanceKm, int calories) {
+        // Перевірка виконується до входу в тіло конструктора, тому частково створений
+        // об'єкт не виникає (виправлення SpotBugs CT_CONSTRUCTOR_THROW).
+        this(Objects.requireNonNull(date, "Дата не може бути null"),
+                Objects.requireNonNull(kind, "Вид не може бути null"),
+                validateNumbers(minutes, distanceKm, calories), distanceKm, calories, true);
+    }
+
+    /* Присвоює вже перевірений стан під час внутрішнього делегування. */
+    private Training(LocalDate date, TrainingKind kind, int minutes, double distanceKm, int calories,
+            boolean validated) {
+        this.date = date;
+        this.kind = kind;
+        this.minutes = minutes;
+        this.distanceKm = distanceKm;
+        this.calories = calories;
+    }
+
+    /* Перевіряє числові інваріанти та повертає перевірену тривалість. */
+    private static int validateNumbers(int minutes, double distanceKm, int calories) {
         if (minutes < 0 || distanceKm < 0 || calories < 0) {
             throw new IllegalArgumentException("від'ємне числове значення");
         }
         if (!Double.isFinite(distanceKm)) {
             throw new IllegalArgumentException("дистанція має бути скінченним числом");
         }
-        this.minutes = minutes;
-        this.distanceKm = distanceKm;
-        this.calories = calories;
+        return minutes;
+    }
+
+    /**
+     * Створює тренування потрібного підтипу за підписом виду.
+     *
+     * <p>Вибір підтипу виконується один раз на межі створення об'єкта; далі код працює
+     * лише через спільний тип.
+     *
+     * @param date дата
+     * @param kindLabel вид тренування з CSV
+     * @param minutes тривалість, хв
+     * @param distanceKm дистанція, км
+     * @param calories калорії
+     * @return {@link OutdoorTraining} або {@link IndoorTraining}
+     */
+    public static Training create(LocalDate date, String kindLabel, int minutes,
+            double distanceKm, int calories) {
+        Objects.requireNonNull(kindLabel, "Вид не може бути null");
+        if (kindLabel.isBlank()) {
+            throw new IllegalArgumentException("порожня дата або вид тренування");
+        }
+        TrainingKind kind = TrainingKind.fromLabel(kindLabel);
+        return kind.isOutdoor()
+                ? new OutdoorTraining(date, kind, minutes, distanceKm, calories)
+                : new IndoorTraining(date, kind, minutes, distanceKm, calories);
     }
 
     /**
      * Створює тренування з CSV-рядка {@code date;kind;minutes;distanceKm;calories}.
      *
      * @param line рядок CSV
-     * @return створене тренування
+     * @return тренування відповідного підтипу
      * @throws IllegalArgumentException якщо структура, типи або значення некоректні
      */
     public static Training fromCsv(String line) {
-        // Фабрика відповідає за структуру й типи, конструктор - за інваріанти.
         if (line == null || line.isBlank()) {
             throw new IllegalArgumentException("порожній рядок");
         }
@@ -107,7 +145,7 @@ public final class Training {
             throw new IllegalArgumentException("дата має формат YYYY-MM-DD", exception);
         }
         try {
-            return new Training(date, fields[1].trim(),
+            return create(date, fields[1].trim(),
                     Integer.parseInt(fields[2].trim()),
                     Double.parseDouble(fields[3].trim()),
                     Integer.parseInt(fields[4].trim()));
@@ -116,283 +154,411 @@ public final class Training {
         }
     }
 
+    /**
+     * Обчислює умовне навантаження тренування в балах.
+     *
+     * @return навантаження; формула залежить від підтипу
+     */
+    public abstract double load();
+
     /** @return дата тренування */
-    public LocalDate getDate() {
+    public final LocalDate getDate() {
         return date;
     }
 
-    /** @return вид тренування */
-    public String getKind() {
+    /** @return підпис виду (сумісність із ЛР2) */
+    public final String getKind() {
+        return kind.label();
+    }
+
+    /** @return вид тренування як enum */
+    public final TrainingKind getTrainingKind() {
         return kind;
     }
 
     /** @return тривалість у хвилинах */
-    public int getMinutes() {
+    public final int getMinutes() {
         return minutes;
     }
 
     /** @return дистанція в кілометрах */
-    public double getDistanceKm() {
+    public final double getDistanceKm() {
         return distanceKm;
     }
 
     /** @return витрата калорій */
-    public int getCalories() {
+    public final int getCalories() {
         return calories;
+    }
+
+    /** Порівнює тренування за підтипом і всіма полями. */
+    @Override
+    public final boolean equals(Object other) {
+        if (this == other) {
+            return true;
+        }
+        if (other == null || getClass() != other.getClass()) {
+            return false;
+        }
+        Training training = (Training) other;
+        return minutes == training.minutes
+                && Double.compare(distanceKm, training.distanceKm) == 0
+                && calories == training.calories
+                && date.equals(training.date)
+                && kind == training.kind;
+    }
+
+    /** Повертає хеш-код, узгоджений із {@link #equals(Object)}. */
+    @Override
+    public final int hashCode() {
+        return Objects.hash(getClass(), date, kind, minutes, distanceKm, calories);
     }
 
     /** Повертає текстове подання тренування для звіту. */
     @Override
     public String toString() {
         return String.format(Locale.ROOT, "%s %s: %d хв, %.2f км, %d ккал",
-                date, kind, minutes, distanceKm, calories);
+                date, kind.label(), minutes, distanceKm, calories);
     }
 }
 ```
 
-## Фабричний метод і record
+## Підтипи
 
-Training.fromCsv(String) відповідає за структуру й типи: порожній рядок, кількість полів (split(";", -1)), порожні дата/вид, формат дати (LocalDate.parse), числа (NumberFormatException перетворюється на IllegalArgumentException із причиною). Інваріанти перевіряє конструктор, тому обійти їх іншим способом створення неможливо. Номер рядка додається на рівні циклу читання TrainingProcessor.parseAll.
+*Таблиця 2 – Підтипи та формули load()*
 
-Record DurationDistance(count, totalMinutes, totalDistance, maxCalories) – незмінне значення підсумку. Компактний конструктор відхиляє від'ємні та нескінченні показники; компілятор автоматично створює конструктор, методи доступу, equals, hashCode, toString. Статичний метод of(List<Training>) обчислює показники.
+| Підтип | Види | Власне правило | load(), бали |
+|---|---|---|---|
+| OutdoorTraining | біг, велосипед, ходьба | дистанція > 0 | хв + 3·км + ккал/10 |
+| IndoorTraining | плавання, тренажери | дистанція може бути 0 | 1.2·хв + ккал/10 |
 
-*Лістинг 2 – src/main/java/ua/lpnu/kzp/DurationDistance.java*
+*Лістинг 2 – src/main/java/ua/lpnu/kzp/OutdoorTraining.java*
 
 ```text
 package ua.lpnu.kzp;
 
-import java.util.List;
+import java.time.LocalDate;
 
-/**
- * Незмінний підсумок показників варіанта 2.
- *
- * @param count кількість коректних записів
- * @param totalMinutes сумарний час, хв
- * @param totalDistance сумарна дистанція, км
- * @param maxCalories найбільша витрата калорій
- */
-public record DurationDistance(int count, int totalMinutes, double totalDistance, int maxCalories) {
-    /** Перевіряє допустимість підсумкових показників. */
-    public DurationDistance {
-        if (count < 0 || totalMinutes < 0 || maxCalories < 0
-                || totalDistance < 0 || !Double.isFinite(totalDistance)) {
-            throw new IllegalArgumentException("Показники не можуть бути від'ємними");
+/** Тренування на відкритому повітрі: біг, велосипед, ходьба. */
+public final class OutdoorTraining extends Training {
+    /** Бали навантаження за один кілометр дистанції. */
+    public static final double POINTS_PER_KM = 3.0;
+
+    /**
+     * Створює тренування на відкритому повітрі.
+     *
+     * @param date дата
+     * @param kind вид, для якого {@link TrainingKind#isOutdoor()} істинне
+     * @param minutes тривалість, хв
+     * @param distanceKm дистанція, км; має бути додатною
+     * @param calories калорії
+     */
+    public OutdoorTraining(LocalDate date, TrainingKind kind, int minutes, double distanceKm, int calories) {
+        // Спочатку базовий клас перевіряє спільний стан, потім підтип - власне правило.
+        super(date, kind, minutes, distanceKm, calories);
+        if (!kind.isOutdoor()) {
+            throw new IllegalArgumentException("вид %s не є тренуванням надворі".formatted(kind.label()));
+        }
+        if (distanceKm <= 0) {
+            throw new IllegalArgumentException("дистанція тренування надворі має бути додатною");
         }
     }
 
-    /**
-     * Обчислює підсумок для списку тренувань.
-     *
-     * @param trainings коректні тренування
-     * @return підсумкові показники
-     */
-    public static DurationDistance of(List<Training> trainings) {
-        int minutes = 0;
-        double distance = 0.0;
-        int maxCalories = 0;
-        for (Training training : trainings) {
-            minutes += training.getMinutes();
-            distance += training.getDistanceKm();
-            maxCalories = Math.max(maxCalories, training.getCalories());
-        }
-        return new DurationDistance(trainings.size(), minutes, distance, maxCalories);
+    /** Навантаження = хвилини + 3 бали за км + калорії / 10. */
+    @Override
+    public double load() {
+        return getMinutes() + getDistanceKm() * POINTS_PER_KM + getCalories() / 10.0;
     }
 }
 ```
 
-*Лістинг 3 – TrainingProcessor.java (фрагмент parseAll)*
+*Лістинг 3 – src/main/java/ua/lpnu/kzp/IndoorTraining.java*
 
 ```text
+package ua.lpnu.kzp;
+
+import java.time.LocalDate;
+
+/** Тренування в приміщенні: плавання, тренажери. */
+public final class IndoorTraining extends Training {
+    /** Коефіцієнт інтенсивності для тренувань у приміщенні. */
+    public static final double INTENSITY = 1.2;
+
     /**
-     * Перетворює рядки на тренування; хибний рядок не потрапляє до списку.
+     * Створює тренування в приміщенні.
      *
-     * @param lines усі рядки файла
-     * @param trainings список, до якого додаються коректні тренування
-     * @return повідомлення про пропущені рядки з номером і причиною
+     * @param date дата
+     * @param kind вид, для якого {@link TrainingKind#isOutdoor()} хибне
+     * @param minutes тривалість, хв
+     * @param distanceKm дистанція, км; для тренажерів допускається 0
+     * @param calories калорії
      */
-    public static List<String> parseAll(List<String> lines, List<Training> trainings) {
-        List<String> errors = new ArrayList<>();
-        for (int lineNumber = 1; lineNumber <= lines.size(); lineNumber++) {
-            try {
-                trainings.add(Training.fromCsv(lines.get(lineNumber - 1)));
-            } catch (IllegalArgumentException exception) {
-                errors.add("Рядок %d: %s".formatted(lineNumber, exception.getMessage()));
+    public IndoorTraining(LocalDate date, TrainingKind kind, int minutes, double distanceKm, int calories) {
+        super(date, kind, minutes, distanceKm, calories);
+        if (kind.isOutdoor()) {
+            throw new IllegalArgumentException("вид %s не є тренуванням у приміщенні".formatted(kind.label()));
+        }
+    }
+
+    /** Навантаження = хвилини · 1.2 + калорії / 10 (дистанція не враховується). */
+    @Override
+    public double load() {
+        return getMinutes() * INTENSITY + getCalories() / 10.0;
+    }
+}
+```
+
+## enum
+
+TrainingKind має константи RUNNING, CYCLING, WALKING, SWIMMING, GYM з полями label (підпис у CSV і звіті) та outdoor (місце проведення). Метод fromLabel перетворює текст із CSV на константу й відхиляє невідомий вид. Значення порівнюються через ==, бо кожна константа існує в одному екземплярі. Звіт групує навантаження в EnumMap, тому порядок видів стабільний (порядок оголошення констант).
+
+*Лістинг 4 – src/main/java/ua/lpnu/kzp/TrainingKind.java*
+
+```text
+package ua.lpnu.kzp;
+
+/** Фіксований набір видів тренувань із підписом для звіту та місцем проведення. */
+public enum TrainingKind {
+    /** Біг на відкритому повітрі. */
+    RUNNING("біг", true),
+    /** Велосипедна поїздка. */
+    CYCLING("велосипед", true),
+    /** Піша прогулянка. */
+    WALKING("ходьба", true),
+    /** Плавання в басейні. */
+    SWIMMING("плавання", false),
+    /** Заняття на тренажерах у залі. */
+    GYM("тренажери", false);
+
+    private final String label;
+    private final boolean outdoor;
+
+    /* Конструктор enum використовується JVM для створення фіксованих констант. */
+    TrainingKind(String label, boolean outdoor) {
+        this.label = label;
+        this.outdoor = outdoor;
+    }
+
+    /** @return текстове подання виду, яке зберігається у CSV і звіті */
+    public String label() {
+        return label;
+    }
+
+    /** @return {@code true}, якщо тренування проходить на відкритому повітрі */
+    public boolean isOutdoor() {
+        return outdoor;
+    }
+
+    /**
+     * Знаходить вид за підписом із CSV.
+     *
+     * @param label підпис, наприклад {@code біг}
+     * @return відповідна константа
+     * @throws IllegalArgumentException якщо такого виду немає
+     */
+    public static TrainingKind fromLabel(String label) {
+        for (TrainingKind kind : values()) {
+            if (kind.label.equals(label)) {
+                return kind;
             }
         }
-        return errors;
+        throw new IllegalArgumentException("невідомий вид тренування: %s".formatted(label));
+    }
+}
+```
+
+## equals і hashCode
+
+Критерій рівності – той самий підтип (getClass()) і всі п'ять полів (дистанція порівнюється через Double.compare). hashCode будується з тих самих полів і класу через Objects.hash, тому контракт «рівні об'єкти – рівні хеш-коди» виконується. Обидва методи final, щоб підтипи не порушили симетрію. Поля незмінні, тому об'єкт безпечно зберігати в HashSet і використовувати ключем HashMap (перевірено тестами).
+
+## Поліморфізм
+
+TrainingProcessor.totalLoad і formatLoadSection працюють зі списком List<Training> і викликають training.load() без instanceof чи switch: реалізацію обирає JVM за фактичним підтипом. Додавання нового підтипу (наприклад, TeamTraining) не потребує змін у коді звіту. Спадкування доречне, бо кожен підтип «є різновидом» тренування; звіт же лише містить список тренувань, тому для нього обрано композицію, а не extends ArrayList.
+
+*Лістинг 5 – TrainingProcessor.java (поліморфні методи)*
+
+```text
+
+    /**
+     * Обчислює сумарне навантаження через поліморфний метод без перевірки підтипу.
+     *
+     * @param trainings тренування різних підтипів
+     * @return сума {@link Training#load()}
+     */
+    public static double totalLoad(List<Training> trainings) {
+        double total = 0.0;
+        for (Training training : trainings) {
+            // Реалізацію load() обирає JVM за фактичним підтипом об'єкта.
+            total += training.load();
+        }
+        return total;
+    }
+
+    /**
+     * Формує розділ звіту про навантаження за видами та унікальні записи.
+     *
+     * @param trainings коректні тренування
+     * @return текст розділу
+     */
+    public static String formatLoadSection(List<Training> trainings) {
+        Map<TrainingKind, Double> byKind = new EnumMap<>(TrainingKind.class);
+        for (Training training : trainings) {
+            byKind.merge(training.getTrainingKind(), training.load(), Double::sum);
+        }
+        StringBuilder section = new StringBuilder();
+        section.append(String.format(Locale.ROOT, "Навантаження (поліморфний розрахунок load), бали%n"));
+        for (Map.Entry<TrainingKind, Double> entry : byKind.entrySet()) {
+            section.append(String.format(Locale.ROOT, "  %-32s %10.2f%n",
+                    entry.getKey().label() + (entry.getKey().isOutdoor() ? " (надворі)" : " (у приміщенні)"),
+                    entry.getValue()));
+        }
+        section.append(String.format(Locale.ROOT, "  %-32s %10.2f%n", "Усього", totalLoad(trainings)));
+        section.append(String.format(Locale.ROOT, "Унікальних тренувань (HashSet): %d%n",
+                new HashSet<>(trainings).size()));
+        return section.toString();
     }
 ```
 
 ## Тестування
 
-До 10 перенесених тестів ЛР1 додано 12 тестів TrainingTest: коректний конструктор зберігає всі поля; граничний випадок 0 хв / 0 км / 0 ккал; порожній і null-вид, null-дата; від'ємні значення; NaN і нескінченність; fromCsv для коректного рядка; неправильна кількість полів, число й дата; порушення інваріанта в CSV; toString із крапкою; значеннєва рівність і компоненти record; record відхиляє від'ємні значення; хибний рядок не потрапляє до списку й не змінює статистику.
+Перенесено 22 тести ЛР1–ЛР2 і додано 9 тестів TrainingHierarchyTest. Єдина обґрунтована зміна старих тестів – виклик new Training(...) замінено на Training.create(...), бо базовий клас став абстрактним; перевірки й очікування не змінено. Нові тести: вибір підтипу фабрикою; різні формули load(); власне правило підтипу (ходьба з 0 км); чужий вид для підтипу; відхилення неправильного спільного стану базовим класом; пошук enum і невідомий вид; рівність, однаковий hashCode і один елемент у HashSet; ключ HashMap; поліморфна сума через базовий тип.
 
-*Лістинг 4 – src/test/java/ua/lpnu/kzp/TrainingTest.java*
+*Лістинг 6 – src/test/java/ua/lpnu/kzp/TrainingHierarchyTest.java*
 
 ```text
 package ua.lpnu.kzp;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.LocalDate;
-import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
-class TrainingTest {
-    private static final LocalDate DATE = LocalDate.of(2026, 9, 1);
+class TrainingHierarchyTest {
+    private static final LocalDate DATE = LocalDate.of(2026, 9, 8);
 
-    /* Перевіряє, що коректний конструктор зберігає всі поля. */
+    /* Перевіряє, що фабрика обирає підтип за видом. */
     @Test
-    void constructorStoresAllFields() {
-        Training training = new Training(DATE, "біг", 45, 8.5, 520);
-        assertEquals(DATE, training.getDate());
-        assertEquals("біг", training.getKind());
-        assertEquals(45, training.getMinutes());
-        assertEquals(8.5, training.getDistanceKm(), 0.0001);
-        assertEquals(520, training.getCalories());
+    void factoryChoosesSubtypeByKind() {
+        assertInstanceOf(OutdoorTraining.class, Training.create(DATE, "біг", 45, 8.5, 520));
+        assertInstanceOf(IndoorTraining.class, Training.create(DATE, "плавання", 40, 1.5, 410));
     }
 
-    /* Перевіряє граничний коректний випадок: нульові хвилини, дистанція й калорії. */
+    /* Перевіряє формули поліморфного методу кожного підтипу. */
     @Test
-    void constructorAcceptsZeroBoundary() {
-        Training training = new Training(DATE, "тренажери", 0, 0.0, 0);
-        assertEquals(0, training.getMinutes());
+    void subtypesCalculateLoadDifferently() {
+        Training outdoor = Training.create(DATE, "біг", 60, 10.0, 600);
+        Training indoor = Training.create(DATE, "тренажери", 60, 0.0, 600);
+        assertEquals(60 + 30 + 60, outdoor.load(), 0.0001);
+        assertEquals(72 + 60, indoor.load(), 0.0001);
+        assertNotEquals(outdoor.load(), indoor.load());
     }
 
-    /* Перевіряє відхилення порожнього та null-виду. */
+    /* Перевіряє власне правило підтипу: надворі дистанція має бути додатною. */
     @Test
-    void constructorRejectsBlankOrNullKind() {
-        assertThrows(IllegalArgumentException.class, () -> new Training(DATE, " ", 45, 8.5, 520));
-        assertThrows(NullPointerException.class, () -> new Training(DATE, null, 45, 8.5, 520));
-        assertThrows(NullPointerException.class, () -> new Training(null, "біг", 45, 8.5, 520));
+    void outdoorRejectsZeroDistance() {
+        assertThrows(IllegalArgumentException.class, () -> Training.create(DATE, "ходьба", 30, 0.0, 100));
     }
 
-    /* Перевіряє відхилення від'ємних значень. */
+    /* Перевіряє, що підтип не приймає вид іншої категорії. */
     @Test
-    void constructorRejectsNegativeValues() {
-        assertThrows(IllegalArgumentException.class, () -> new Training(DATE, "біг", -1, 8.5, 520));
-        assertThrows(IllegalArgumentException.class, () -> new Training(DATE, "біг", 45, -0.1, 520));
-        assertThrows(IllegalArgumentException.class, () -> new Training(DATE, "біг", 45, 8.5, -5));
-    }
-
-    /* Перевіряє відхилення NaN і нескінченної дистанції. */
-    @Test
-    void constructorRejectsNonFiniteDistance() {
+    void subtypeRejectsForeignKind() {
         assertThrows(IllegalArgumentException.class,
-                () -> new Training(DATE, "біг", 45, Double.NaN, 520));
+                () -> new IndoorTraining(DATE, TrainingKind.RUNNING, 30, 5.0, 300));
         assertThrows(IllegalArgumentException.class,
-                () -> new Training(DATE, "біг", 45, Double.POSITIVE_INFINITY, 520));
+                () -> new OutdoorTraining(DATE, TrainingKind.GYM, 30, 1.0, 300));
     }
 
-    /* Перевіряє створення сутності з коректного CSV-рядка. */
+    /* Перевіряє, що базовий тип відхиляє неправильний спільний стан. */
     @Test
-    void fromCsvCreatesValidEntity() {
-        Training training = Training.fromCsv("2026-09-02;велосипед;90;32.00;780");
-        assertEquals(LocalDate.of(2026, 9, 2), training.getDate());
-        assertEquals("велосипед", training.getKind());
-        assertEquals(32.0, training.getDistanceKm(), 0.0001);
+    void baseTypeRejectsInvalidCommonState() {
+        assertThrows(IllegalArgumentException.class, () -> Training.create(DATE, "плавання", -5, 1.0, 100));
+        assertThrows(NullPointerException.class,
+                () -> new IndoorTraining(DATE, null, 30, 1.0, 300));
     }
 
-    /* Перевіряє відхилення неправильної кількості полів, числа та дати. */
+    /* Перевіряє пошук enum за підписом і невідомий вид. */
     @Test
-    void fromCsvRejectsInvalidStructure() {
-        assertThrows(IllegalArgumentException.class, () -> Training.fromCsv("2026-09-14;біг;40;7.00"));
-        assertThrows(IllegalArgumentException.class,
-                () -> Training.fromCsv("2026-09-13;плавання;сорок;1.20;380"));
-        assertThrows(IllegalArgumentException.class, () -> Training.fromCsv("13.09.2026;біг;40;7.00;300"));
+    void enumFindsByLabel() {
+        assertEquals(TrainingKind.CYCLING, TrainingKind.fromLabel("велосипед"));
+        assertTrue(TrainingKind.CYCLING.isOutdoor());
+        assertThrows(IllegalArgumentException.class, () -> TrainingKind.fromLabel("йога"));
     }
 
-    /* Перевіряє, що порушення інваріанта у CSV також відхиляється. */
+    /* Перевіряє, що рівні об'єкти мають однаковий hashCode і не дублюються в HashSet. */
     @Test
-    void fromCsvRejectsInvariantViolation() {
-        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
-                () -> Training.fromCsv("2026-09-11;біг;-20;4.00;300"));
-        assertEquals("від'ємне числове значення", exception.getMessage());
+    void equalObjectsHaveOneSetEntry() {
+        Training first = Training.create(DATE, "біг", 45, 8.5, 520);
+        Training second = Training.fromCsv("2026-09-08;біг;45;8.50;520");
+        assertEquals(first, second);
+        assertEquals(first.hashCode(), second.hashCode());
+        Set<Training> set = new HashSet<>(List.of(first, second));
+        assertEquals(1, set.size());
     }
 
-    /* Перевіряє toString із крапкою як десятковим роздільником. */
+    /* Перевіряє, що логічно рівний об'єкт знаходиться як ключ HashMap. */
     @Test
-    void toStringUsesRootLocale() {
-        assertEquals("2026-09-01 біг: 45 хв, 8.50 км, 520 ккал",
-                new Training(DATE, "біг", 45, 8.5, 520).toString());
+    void equalObjectWorksAsMapKey() {
+        Map<Training, String> notes = new HashMap<>();
+        notes.put(Training.create(DATE, "плавання", 40, 1.5, 410), "басейн");
+        assertEquals("басейн", notes.get(Training.create(DATE, "плавання", 40, 1.5, 410)));
     }
 
-    /* Перевіряє значеннєву рівність record. */
+    /* Перевіряє, що поліморфна сума не залежить від порядку і не перевіряє підтип. */
     @Test
-    void recordUsesValueEquality() {
-        DurationDistance first = new DurationDistance(2, 135, 40.5, 780);
-        assertEquals(first, new DurationDistance(2, 135, 40.5, 780));
-        assertNotEquals(first, new DurationDistance(2, 135, 40.5, 781));
-        assertEquals(135, first.totalMinutes());
-    }
-
-    /* Перевіряє, що record відхиляє від'ємні показники. */
-    @Test
-    void recordRejectsNegativeValues() {
-        assertThrows(IllegalArgumentException.class, () -> new DurationDistance(-1, 0, 0, 0));
-    }
-
-    /* Перевіряє, що хибний рядок не потрапляє до списку й не змінює статистику. */
-    @Test
-    void invalidLineDoesNotChangeStatistics() {
-        List<Training> trainings = new ArrayList<>();
-        List<String> errors = TrainingProcessor.parseAll(List.of(
-                "2026-09-01;біг;45;8.50;520", "2026-09-11;біг;-20;4.00;900"), trainings);
-        assertEquals(1, trainings.size());
-        assertEquals(1, errors.size());
-        assertTrue(errors.get(0).startsWith("Рядок 2"));
-        assertEquals(520, DurationDistance.of(trainings).maxCalories());
+    void polymorphicTotalUsesBaseType() {
+        List<Training> trainings = List.of(
+                Training.create(DATE, "біг", 60, 10.0, 600),
+                Training.create(DATE, "тренажери", 60, 0.0, 600));
+        assertEquals(150 + 132, TrainingProcessor.totalLoad(trainings), 0.0001);
     }
 }
 ```
 
-## Інфраструктура
-
-*Лістинг 5 – Результат mvnw.cmd -B clean verify*
+*Лістинг 7 – Результат mvnw.cmd -B clean verify*
 
 ```text
-[INFO] Building kzp-lab-andrushko 1.1.0
-[INFO] Tests run: 10, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.155 s -- in ua.lpnu.kzp.TrainingProcessorTest
-[INFO] Tests run: 12, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.060 s -- in ua.lpnu.kzp.TrainingTest
-[INFO] Tests run: 22, Failures: 0, Errors: 0, Skipped: 0
-[INFO] Building jar: C:\Users\user\kzp-labs\lab02\target\kzp-lab-andrushko-1.1.0.jar
+[INFO] Building kzp-lab-andrushko 1.2.0
+[INFO] Tests run: 9, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.084 s -- in ua.lpnu.kzp.TrainingHierarchyTest
+[INFO] Tests run: 10, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.096 s -- in ua.lpnu.kzp.TrainingProcessorTest
+[INFO] Tests run: 12, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.057 s -- in ua.lpnu.kzp.TrainingTest
+[INFO] Tests run: 31, Failures: 0, Errors: 0, Skipped: 0
+[INFO] Building jar: C:\Users\user\kzp-labs\lab03\target\kzp-lab-andrushko-1.2.0.jar
 [INFO] BugInstance size is 0
 [INFO] No errors/warnings found
 [INFO] BUILD SUCCESS
 ```
 
-*Лістинг 6 – java -jar target/kzp-lab-andrushko-1.1.0.jar --version*
+## Інфраструктура
 
-```text
-kzp-lab-andrushko 1.1.0
-```
-
-GitHub Actions (успадкований ci.yml) запускає старі й нові тести на трьох ОС і публікує JAR: посилання на запуск CI та артефакт – вставити після push.
+Під час першого verify SpotBugs знайшов дефект CT_CONSTRUCTOR_THROW: конструктор незавершеного (не final) класу Training кидав виняток із тіла, залишаючи частково створений об'єкт (вразливість до Finalizer-атаки). Його оформлено як bug-Issue та виправлено за схемою з методичних вказівок: перевірка виконується у виразах аргументів делегованого виклику this(…) до входу в тіло конструктора. Повторний verify – BUILD SUCCESS, «No errors/warnings found». CI: посилання на запуск GitHub Actions і артефакт – після push.
 
 ## GitHub Issues і Pull Request
 
-*Таблиця 2 – План GitHub Issues → зміна → перевірка*
+*Таблиця 3 – План GitHub Issues → зміна → перевірка*
 
 | Issue | Мітка | Зміна | Перевірка |
 |---|---|---|---|
-| Клас-сутність Training | feature | private final поля, геттери, toString | TrainingTest |
-| Валідація в конструкторі | feature | інваріанти, requireNonNull, isFinite | негативні тести |
-| Фабрика fromCsv | feature | розбір структури, LocalDate | тести fromCsv |
-| Record DurationDistance | feature | підсумок замість double[] | тест рівності |
-| Збереження поведінки ЛР1 | infra | фасад TrainingProcessor | 10 тестів ЛР1 без змін, порівняння звітів |
-| Документація ЛР2 | docs | README, javadoc, REPORT | рев'ю PR |
-
-Pull Request lab02 → main містить опис перебудови, результати verify і Closes #N для наведених Issues.
+| Абстрактний базовий тип Training | feature | спільні поля, load() | baseTypeRejects… |
+| Підтипи Indoor/Outdoor | feature | формули load(), власні правила | subtypesCalculate… |
+| enum TrainingKind | feature | label, outdoor, fromLabel | enumFindsByLabel |
+| equals/hashCode | feature | рівність за класом і полями | HashSet, HashMap |
+| [bug] SpotBugs CT_CONSTRUCTOR_THROW | bug | перевірка до тіла конструктора | verify без помилок |
+| Документація ЛР3 | docs | README, javadoc, REPORT | рев'ю PR |
 
 ## Порівняння поведінки
 
-Контрольний вхідний файл ЛР1 оброблено версіями 1.0.0 і 1.1.0. Команда Compare-Object (PowerShell) для out/report.txt обох версій не знайшла жодної відмінності: кількість записів, показники, порядок рядків і повідомлення про помилки однакові.
+Перші 12 рядків звіту (показники й повідомлення про помилки) збігаються з ЛР1–ЛР2; після них додано розділ поліморфного навантаження. Перевірка вручну для бігу: (45+25.5+52) + (30+25.5+35) + (45+30+61) = 349.00 бала.
 
-*Лістинг 7 – Вивід версії 1.1.0 (ідентичний ЛР1)*
+*Лістинг 8 – Вивід версії 1.2.0*
 
 ```text
 Звіт: спортивні тренування
@@ -407,6 +573,14 @@ Pull Request lab02 → main містить опис перебудови, рез
 Рядок 11: порожня дата або вид тренування
 Рядок 12: числове поле має помилковий формат
 Рядок 13: очікується 5 полів, отримано 4
+Навантаження (поліморфний розрахунок load), бали
+  біг (надворі)                        349.00
+  велосипед (надворі)                  589.90
+  ходьба (надворі)                     125.40
+  плавання (у приміщенні)               89.00
+  тренажери (у приміщенні)             117.00
+  Усього                              1270.30
+Унікальних тренувань (HashSet): 8
 Звіт записано у out\report.txt
 ```
 
@@ -416,87 +590,87 @@ Pull Request lab02 → main містить опис перебудови, рез
 
 ## Відповіді на контрольні питання
 
-1. Яку проблему розв'язує клас-сутність порівняно з рядком і паралельними змінними?
+1. Яку спільну проблему розв'язує базовий тип у предметній області?
 
-Поля отримують імена й типи (getMinutes() замість fields[2]), правила перевірки зосереджено в одному місці, а некоректний об'єкт неможливо створити.
+Спільні поля й перевірки всіх тренувань описано один раз, а код звіту працює з одним типом Training незалежно від підтипу.
 
-2. Що означають private і final у полях класу?
+2. Чим відрізняються extends і implements?
 
-private закриває прямий доступ ззовні класу, final забороняє повторне присвоєння після конструктора. Разом вони роблять стан Training незмінним.
+extends успадковує клас (стан і реалізацію, лише один батько), implements зобов'язує клас реалізувати контракт інтерфейсу (інтерфейсів може бути кілька).
 
-3. Що таке інкапсуляція і яку проблему вона запобігає?
+3. Навіщо базовий клас може бути abstract?
 
-Приховування внутрішнього представлення з наданням лише дозволених операцій. Вона не дає зовнішньому коду записати в об'єкт від'ємні хвилини чи порожній вид.
+Щоб заборонити створення «тренування взагалі» і змусити кожен підтип реалізувати load().
 
-4. Чому перевірку інваріантів розміщують у конструкторі?
+4. Яку роль виконує виклик super(...) у конструкторі підтипу?
 
-Конструктор – єдиний шлях створення об'єкта, тому хибне значення відхиляється до того, як об'єкт потрапить у список чи статистику.
+Спочатку ініціалізує й перевіряє спільну частину об'єкта в базовому класі, лише потім підтип перевіряє власне правило.
 
-5. Чим Objects.requireNonNull відрізняється від isBlank?
+5. Що перевіряє анотація @Override?
 
-requireNonNull перевіряє відсутність значення (null) і кидає NullPointerException; isBlank перевіряє наявний рядок на порожність або пробіли.
+Що метод справді перевизначає метод супертипу; помилка в назві чи параметрах стане помилкою компіляції.
 
-6. Чому відсутність сеттерів може допомогти зберегти коректний стан?
+6. Що таке поліморфізм і як він усуває розгалуження за типом?
 
-Немає способу змінити поле після перевірки в конструкторі, тож інваріант виконується протягом усього життя об'єкта.
+Змінна базового типу посилається на об'єкт підтипу, а виклик load() виконує реалізацію фактичного об'єкта, тому if (x instanceof …) не потрібен.
 
-7. Які методи й властивості автоматично отримує record?
+7. Коли краще використати інтерфейс, а коли абстрактний клас?
 
-Канонічний конструктор, private final поля, методи доступу з іменами компонентів (count()), equals, hashCode і toString.
+Інтерфейс – для спільної можливості без стану або коли потрібно кілька контрактів; абстрактний клас – коли підтипи мають спільний стан і реалізацію, як у моєму Training.
 
-8. Чим record відрізняється від звичайного класу-сутності?
+8. Що означає відношення «є різновидом» і чим воно відрізняється від композиції?
 
-Record – компактний носій даних із фіксованим набором компонентів і значеннєвою рівністю; він не може мати інших полів екземпляра і не успадковується. Клас-сутність може мати довільну поведінку, приховані поля й власні правила.
+is-a: біг є тренуванням, тому OutdoorTraining extends Training. has-a: звіт містить список тренувань, тож список – поле, а не батьківський клас.
 
-9. Чому record не гарантує глибоку незмінність змінного списку?
+9. Для чого використовують enum із полями та методами?
 
-Record зберігає посилання на список, а не копію; вміст списку можна змінити через інше посилання. Потрібна явна List.copyOf.
+Для фіксованої множини значень із пов'язаними даними: TrainingKind зберігає підпис і ознаку «надворі», а fromLabel перетворює текст CSV.
 
-10. Для чого потрібен статичний фабричний метод fromCsv?
+10. Чому значення enum можна порівнювати через ==?
 
-Назва пояснює джерело даних, метод приховує розбір полів і перетворення типів, а конструктор залишається відповідальним лише за інваріанти.
+Кожна константа створюється JVM один раз, тому однакові значення – той самий об'єкт.
 
-11. Де потрібно перехоплювати помилку розбору одного рядка?
+11. Які правила має виконувати пара equals/hashCode?
 
-У циклі читання (parseAll), де відомий номер рядка: виняток перетворюється на повідомлення «Рядок N: причина», і обробка продовжується.
+Рефлексивність, симетричність, транзитивність, узгодженість; якщо a.equals(b), то a.hashCode() == b.hashCode().
 
-12. Чому неправильний запис не можна додавати до списку до завершення перевірки?
+12. Чому змінне поле небезпечне для об'єкта, який є ключем HashMap?
 
-Інакше він вплинув би на суми й максимум. У моєму коді add виконується лише з результатом успішного fromCsv; це перевіряє тест invalidLineDoesNotChangeStatistics.
+Після зміни поля змінюється хеш-код, і об'єкт опиняється не в тому кошику – його вже неможливо знайти.
 
-13. Яке призначення toString і чому він не замінює формат CSV?
+13. Чому два об'єкти різних підтипів можуть бути нерівними за однакової назви?
 
-toString дає зрозуміле подання для звіту й налагодження; його формат («45 хв, 8.50 км») не призначений для зворотного розбору, тому CSV формується окремо.
+Бо критерій рівності включає getClass(): тренування різних категорій мають різну поведінку й не вважаються одним записом.
 
-14. Навіщо використовувати Locale.ROOT у toString і звіті?
+14. Як поліморфна колекція обробляє об'єкти різних підтипів?
 
-Щоб десятковий роздільник завжди був крапкою, незалежно від регіональних налаштувань Windows (у українській локалі – кома).
+Зберігає їх як List<Training> і викликає спільні методи; диспетчеризація відбувається під час виконання.
 
-15. Що означає схема тесту AAA?
+15. Які тести доводять, що підтипи мають різну поведінку?
 
-Arrange – підготувати дані, Act – виконати дію, Assert – перевірити результат.
+subtypesCalculateLoadDifferently – однакові дані дають 150 і 132 бали.
 
-16. Які негативні випадки потрібно перевірити для конструктора?
+16. Які тести доводять коректність рівності в HashSet?
 
-null і порожній вид, null-дата, від'ємні хвилини/дистанція/калорії, NaN і нескінченна дистанція.
+equalObjectsHaveOneSetEntry (два рівні об'єкти – один елемент) і equalObjectWorksAsMapKey.
 
-17. Як довести, що рефакторинг не змінив зовнішню поведінку попередньої роботи?
+17. Що контролює sealed і навіщо потрібен permits?
 
-Обробити той самий контрольний файл обома версіями й порівняти звіти, а також запустити старі тести без змін. Обидві перевірки виконано.
+sealed обмежує перелік безпосередніх підтипів, permits їх перелічує; компілятор тоді перевіряє вичерпність switch.
 
-18. Чому тести попередньої роботи мають проходити після цієї роботи?
+18. Чому switch за підтипами не повинен дублювати поліморфні методи?
 
-Вони фіксують контракт продукту; падіння старого тесту означало б зміну поведінки, а не лише внутрішньої моделі.
+Логіку довелося б підтримувати у двох місцях, і новий підтип легко забути в одному з них.
 
-19. Які файли інфраструктури переносяться з попередньої роботи без повторного створення?
+19. Які попередні тести та результати потрібно зберегти після перебудови?
 
-pom.xml (змінено лише версію), mvnw, mvnw.cmd, .mvn/wrapper, ci.yml, форми Issues, шаблон PR, .gitignore, .gitattributes, .editorconfig.
+Усі 22 тести ЛР1–ЛР2 і перші рядки звіту з чотирма показниками та повідомленнями про помилки.
 
-20. Який рядок Вашої реалізації найкраще демонструє інкапсуляцію і чому?
+20. Яке рішення у Вашій ієрархії найкраще демонструє перевагу поліморфізму?
 
-private final int minutes; разом із перевіркою if (minutes < 0 …) throw у конструкторі: поле неможливо ні прочитати напряму, ні змінити, ні отримати від'ємним.
+totalLoad: один рядок training.load() у циклі коректно обробляє обидва підтипи й не зміниться, якщо додати третій.
 
 ## Висновки
 
-Рядкові записи ЛР1 замінено незмінним класом Training з перевіркою інваріантів, фабрикою fromCsv і record DurationDistance. Зовнішній звіт збігся з попередньою версією побайтово, 22 тести (10 старих і 12 нових) проходять, SpotBugs не має зауважень. Клас-сутність стане основою ЛР3, де його буде розділено на підтипи з поліморфною поведінкою.
+Створено абстрактний тип Training, два підтипи з різними правилами й формулами load(), enum TrainingKind, узгоджені equals/hashCode. Звіт зберіг показники попередніх робіт і отримав поліморфний розділ навантаження. 31 тест проходить, знайдений SpotBugs дефект усунуто. Поліморфна модель стане джерелом для потокових запитів ЛР4.
 

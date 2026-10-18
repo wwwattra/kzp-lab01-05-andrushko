@@ -12,7 +12,7 @@ import java.util.List;
 /** Консольна програма обробки журналу спортивних тренувань (варіант 2). */
 public final class Main {
     /** Версія програми, узгоджена з pom.xml і Git-тегом. */
-    public static final String VERSION = "1.1.0";
+    public static final String VERSION = "1.2.0";
 
     /* Забороняє створення екземплярів класу точки входу. */
     private Main() {
@@ -66,7 +66,8 @@ public final class Main {
             if (trainings.isEmpty()) {
                 out.printf("У файлі %s немає жодного коректного запису%n", input);
             }
-            String report = TrainingProcessor.formatReport(DurationDistance.of(trainings), errors);
+            String report = TrainingProcessor.formatReport(DurationDistance.of(trainings), errors)
+                    + TrainingProcessor.formatLoadSection(trainings);
             out.print(report);
             FileReport.writeReport(output, report);
             out.printf("Звіт записано у %s%n", output);

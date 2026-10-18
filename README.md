@@ -1,6 +1,6 @@
-# Журнал спортивних тренувань (КЗП, ЛР2, варіант 2)
+# Журнал спортивних тренувань (КЗП, ЛР3, варіант 2)
 
-Записи моделюються незмінним класом `Training` (перевірка інваріантів у конструкторі, фабрика `fromCsv`), підсумок - record `DurationDistance`. Звіт збігається з ЛР1.
+Абстрактний `Training` має підтипи `OutdoorTraining` і `IndoorTraining` з різною формулою `load()`, вид - enum `TrainingKind`, рівність - `equals`/`hashCode`. До звіту додано розділ поліморфного навантаження.
 
 ## Формат входу
 
@@ -18,10 +18,10 @@ date;kind;minutes;distanceKm;calories
 
 ```text
 mvnw.cmd verify
-java -jar target/kzp-lab-andrushko-1.1.0.jar
-java -jar target/kzp-lab-andrushko-1.1.0.jar --input data/input.csv --output out/report.txt
-java -jar target/kzp-lab-andrushko-1.1.0.jar --help
-java -jar target/kzp-lab-andrushko-1.1.0.jar --version
+java -jar target/kzp-lab-andrushko-1.2.0.jar
+java -jar target/kzp-lab-andrushko-1.2.0.jar --input data/input.csv --output out/report.txt
+java -jar target/kzp-lab-andrushko-1.2.0.jar --help
+java -jar target/kzp-lab-andrushko-1.2.0.jar --version
 ```
 
 На macOS та Ubuntu замість `mvnw.cmd` використовуйте `./mvnw`. Звіт про виконання - у `REPORT.md`.
