@@ -1,6 +1,6 @@
-# Журнал спортивних тренувань (КЗП, ЛР3, варіант 2)
+# Журнал спортивних тренувань (КЗП, ЛР4, варіант 2)
 
-Абстрактний `Training` має підтипи `OutdoorTraining` і `IndoorTraining` з різною формулою `load()`, вид - enum `TrainingKind`, рівність - `equals`/`hashCode`. До звіту додано розділ поліморфного навантаження.
+Обчислення переписано на Stream API: клас `TrainingQueries` містить filter, map, groupingBy, summarizingInt, top-5 зі складеним компаратором і пошук `Optional`.
 
 ## Формат входу
 
@@ -18,10 +18,10 @@ date;kind;minutes;distanceKm;calories
 
 ```text
 mvnw.cmd verify
-java -jar target/kzp-lab-andrushko-1.2.0.jar
-java -jar target/kzp-lab-andrushko-1.2.0.jar --input data/input.csv --output out/report.txt
-java -jar target/kzp-lab-andrushko-1.2.0.jar --help
-java -jar target/kzp-lab-andrushko-1.2.0.jar --version
+java -jar target/kzp-lab-andrushko-1.3.0.jar
+java -jar target/kzp-lab-andrushko-1.3.0.jar --input data/input.csv --output out/report.txt
+java -jar target/kzp-lab-andrushko-1.3.0.jar --help
+java -jar target/kzp-lab-andrushko-1.3.0.jar --version
 ```
 
 На macOS та Ubuntu замість `mvnw.cmd` використовуйте `./mvnw`. Звіт про виконання - у `REPORT.md`.

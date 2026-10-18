@@ -1,537 +1,340 @@
-# Звіт до лабораторної роботи №3
+# Звіт до лабораторної роботи №4
 
-з дисципліни «Кросплатформні засоби програмування», тема «Спадкування, інтерфейси й поліморфізм у Java-проєкті». Варіант 2. Спортивні тренування.
+з дисципліни «Кросплатформні засоби програмування», тема «Потокова обробка даних у Java-проєкті». Варіант 2. Спортивні тренування.
 Виконав: студент групи КІ-302 Андрушко А. І. Прийняв: Олексів М. В.
 
 ## Тема, номер і варіант
 
-Лабораторна робота № 3 «Спадкування, інтерфейси й поліморфізм у Java-проєкті». Варіант 2 – «Спортивні тренування». ОС – Windows 10 (64-bit), JDK Temurin 21.0.12, Maven 3.9.11 через Wrapper. Версія продукту – 1.2.0.
+Лабораторна робота № 4 «Потокова обробка даних у Java-проєкті». Варіант 2 – «Спортивні тренування». ОС – Windows 10 (64-bit), JDK Temurin 21.0.12, Maven 3.9.11 через Wrapper. Версія продукту – 1.3.0.
 
-Посилання на GitHub-репозиторій: https://github.com/[ваш-логін]/kzp-lab-andrushko, гілка lab03, Git-тег v1.2.0.
+Посилання на GitHub-репозиторій: https://github.com/[ваш-логін]/kzp-lab-andrushko, гілка lab04, Git-тег v1.3.0.
 
 ## Мета роботи
 
-Розширити класову модель: винести спільні поля й інваріанти до абстрактного базового типу Training, створити підтипи IndoorTraining і OutdoorTraining з різною реалізацією поліморфної операції load() (розрахунок навантаження), додати enum TrainingKind, реалізувати узгоджені equals/hashCode та обробляти різнорідні об'єкти через спільний тип без розгалуження за підтипом.
+Замінити основні циклові обчислення поліморфної моделі на декларативні запити Stream API без зміни зовнішньої поведінки: додати відбір, перетворення, групування, зведену статистику, складене впорядкування top-N і безпечний пошук через Optional.
 
 ## Стан до і після цієї роботи
 
-*Таблиця 1 – Що додано до моделі ЛР2*
+*Таблиця 1 – Цикл → Stream API → результат*
 
-| Ознака | ЛР2 | ЛР3 |
-|---|---|---|
-| Запис | об'єкт final-класу Training | об'єкт одного з підтипів |
-| Спільні поля | у класі-сутності | в абстрактному базовому класі |
-| Вид тренування | довільний String | enum TrainingKind (5 значень) |
-| Відмінна поведінка | відсутня | перевизначений load() |
-| Рівність | посилальна (Object) | узгоджені equals/hashCode |
-| Звіт | 4 показники | 4 показники без змін + розділ навантаження |
-
-## Базовий тип
-
-Training – абстрактний клас (обрано саме клас, а не інтерфейс, бо підтипи мають спільний стан і готову реалізацію геттерів, рівності та toString). Поля: date, kind (TrainingKind), minutes, distanceKm, calories – private final. Захищений конструктор перевіряє спільні інваріанти (null, від'ємні, нескінченна дистанція) у статичному методі validateNumbers ще до входу в тіло конструктора. Абстрактний метод double load() – поліморфна операція варіанта «розрахунок навантаження». Фабрика create/fromCsv обирає підтип один раз – на межі створення об'єкта.
-
-*Лістинг 1 – src/main/java/ua/lpnu/kzp/Training.java*
-
-```text
-package ua.lpnu.kzp;
-
-import java.time.LocalDate;
-import java.time.format.DateTimeParseException;
-import java.util.Locale;
-import java.util.Objects;
-
-/**
- * Спільний абстрактний тип тренування.
- *
- * <p>Базовий клас зберігає спільні поля та інваріанти, а підтипи реалізують
- * поліморфну операцію {@link #load()} — розрахунок навантаження.
- */
-public abstract class Training {
-    /** Кількість полів у CSV-рядку. */
-    public static final int FIELD_COUNT = 5;
-
-    private final LocalDate date;
-    private final TrainingKind kind;
-    private final int minutes;
-    private final double distanceKm;
-    private final int calories;
-
-    /**
-     * Створює тренування з перевіреним спільним станом.
-     *
-     * @param date дата тренування
-     * @param kind вид тренування
-     * @param minutes тривалість, хв, не від'ємна
-     * @param distanceKm дистанція, км, не від'ємна й скінченна
-     * @param calories витрата калорій, не від'ємна
-     */
-    protected Training(LocalDate date, TrainingKind kind, int minutes, double distanceKm, int calories) {
-        // Перевірка виконується до входу в тіло конструктора, тому частково створений
-        // об'єкт не виникає (виправлення SpotBugs CT_CONSTRUCTOR_THROW).
-        this(Objects.requireNonNull(date, "Дата не може бути null"),
-                Objects.requireNonNull(kind, "Вид не може бути null"),
-                validateNumbers(minutes, distanceKm, calories), distanceKm, calories, true);
-    }
-
-    /* Присвоює вже перевірений стан під час внутрішнього делегування. */
-    private Training(LocalDate date, TrainingKind kind, int minutes, double distanceKm, int calories,
-            boolean validated) {
-        this.date = date;
-        this.kind = kind;
-        this.minutes = minutes;
-        this.distanceKm = distanceKm;
-        this.calories = calories;
-    }
-
-    /* Перевіряє числові інваріанти та повертає перевірену тривалість. */
-    private static int validateNumbers(int minutes, double distanceKm, int calories) {
-        if (minutes < 0 || distanceKm < 0 || calories < 0) {
-            throw new IllegalArgumentException("від'ємне числове значення");
-        }
-        if (!Double.isFinite(distanceKm)) {
-            throw new IllegalArgumentException("дистанція має бути скінченним числом");
-        }
-        return minutes;
-    }
-
-    /**
-     * Створює тренування потрібного підтипу за підписом виду.
-     *
-     * <p>Вибір підтипу виконується один раз на межі створення об'єкта; далі код працює
-     * лише через спільний тип.
-     *
-     * @param date дата
-     * @param kindLabel вид тренування з CSV
-     * @param minutes тривалість, хв
-     * @param distanceKm дистанція, км
-     * @param calories калорії
-     * @return {@link OutdoorTraining} або {@link IndoorTraining}
-     */
-    public static Training create(LocalDate date, String kindLabel, int minutes,
-            double distanceKm, int calories) {
-        Objects.requireNonNull(kindLabel, "Вид не може бути null");
-        if (kindLabel.isBlank()) {
-            throw new IllegalArgumentException("порожня дата або вид тренування");
-        }
-        TrainingKind kind = TrainingKind.fromLabel(kindLabel);
-        return kind.isOutdoor()
-                ? new OutdoorTraining(date, kind, minutes, distanceKm, calories)
-                : new IndoorTraining(date, kind, minutes, distanceKm, calories);
-    }
-
-    /**
-     * Створює тренування з CSV-рядка {@code date;kind;minutes;distanceKm;calories}.
-     *
-     * @param line рядок CSV
-     * @return тренування відповідного підтипу
-     * @throws IllegalArgumentException якщо структура, типи або значення некоректні
-     */
-    public static Training fromCsv(String line) {
-        if (line == null || line.isBlank()) {
-            throw new IllegalArgumentException("порожній рядок");
-        }
-        String[] fields = line.split(";", -1);
-        if (fields.length != FIELD_COUNT) {
-            throw new IllegalArgumentException(
-                    "очікується %d полів, отримано %d".formatted(FIELD_COUNT, fields.length));
-        }
-        if (fields[0].isBlank() || fields[1].isBlank()) {
-            throw new IllegalArgumentException("порожня дата або вид тренування");
-        }
-        LocalDate date;
-        try {
-            date = LocalDate.parse(fields[0].trim());
-        } catch (DateTimeParseException exception) {
-            throw new IllegalArgumentException("дата має формат YYYY-MM-DD", exception);
-        }
-        try {
-            return create(date, fields[1].trim(),
-                    Integer.parseInt(fields[2].trim()),
-                    Double.parseDouble(fields[3].trim()),
-                    Integer.parseInt(fields[4].trim()));
-        } catch (NumberFormatException exception) {
-            throw new IllegalArgumentException("числове поле має помилковий формат", exception);
-        }
-    }
-
-    /**
-     * Обчислює умовне навантаження тренування в балах.
-     *
-     * @return навантаження; формула залежить від підтипу
-     */
-    public abstract double load();
-
-    /** @return дата тренування */
-    public final LocalDate getDate() {
-        return date;
-    }
-
-    /** @return підпис виду (сумісність із ЛР2) */
-    public final String getKind() {
-        return kind.label();
-    }
-
-    /** @return вид тренування як enum */
-    public final TrainingKind getTrainingKind() {
-        return kind;
-    }
-
-    /** @return тривалість у хвилинах */
-    public final int getMinutes() {
-        return minutes;
-    }
-
-    /** @return дистанція в кілометрах */
-    public final double getDistanceKm() {
-        return distanceKm;
-    }
-
-    /** @return витрата калорій */
-    public final int getCalories() {
-        return calories;
-    }
-
-    /** Порівнює тренування за підтипом і всіма полями. */
-    @Override
-    public final boolean equals(Object other) {
-        if (this == other) {
-            return true;
-        }
-        if (other == null || getClass() != other.getClass()) {
-            return false;
-        }
-        Training training = (Training) other;
-        return minutes == training.minutes
-                && Double.compare(distanceKm, training.distanceKm) == 0
-                && calories == training.calories
-                && date.equals(training.date)
-                && kind == training.kind;
-    }
-
-    /** Повертає хеш-код, узгоджений із {@link #equals(Object)}. */
-    @Override
-    public final int hashCode() {
-        return Objects.hash(getClass(), date, kind, minutes, distanceKm, calories);
-    }
-
-    /** Повертає текстове подання тренування для звіту. */
-    @Override
-    public String toString() {
-        return String.format(Locale.ROOT, "%s %s: %d хв, %.2f км, %d ккал",
-                date, kind.label(), minutes, distanceKm, calories);
-    }
-}
-```
-
-## Підтипи
-
-*Таблиця 2 – Підтипи та формули load()*
-
-| Підтип | Види | Власне правило | load(), бали |
+| Обчислення | До (цикл) | Після (потік) | Результат |
 |---|---|---|---|
-| OutdoorTraining | біг, велосипед, ходьба | дистанція > 0 | хв + 3·км + ккал/10 |
-| IndoorTraining | плавання, тренажери | дистанція може бути 0 | 1.2·хв + ккал/10 |
+| Сумарний час | for + minutes += | mapToInt(getMinutes).sum() | 505 – збігся |
+| Сумарна дистанція | for + distance += | mapToDouble(getDistanceKm).sum() | 108.60 – збігся |
+| Максимум калорій | Math.max у циклі | mapToInt(getCalories).max().orElse(0) | 820 – збігся |
+| Сумарне навантаження | for + total += load() | mapToDouble(Training::load).sum() | 1270.30 – збігся |
+| Навантаження за видом | EnumMap.merge у циклі | groupingBy(..., EnumMap, summingDouble) | 5 груп – збіглися |
 
-*Лістинг 2 – src/main/java/ua/lpnu/kzp/OutdoorTraining.java*
+Еквівалентність додатково доведено тестом streamSummaryMatchesLegacyLoop, який обчислює ті самі значення старим циклом і порівнює з потоковою реалізацією.
 
-```text
-package ua.lpnu.kzp;
+## Контракт даних
 
-import java.time.LocalDate;
+Джерело – List<Training> (поліморфні об'єкти OutdoorTraining/IndoorTraining). Поля: LocalDate date, TrainingKind kind, int minutes, double distanceKm, int calories; правила валідності – з ЛР2–ЛР3. Дати подаються через LocalDate, кількості – int, дистанція – double з форматуванням Locale.ROOT.
 
-/** Тренування на відкритому повітрі: біг, велосипед, ходьба. */
-public final class OutdoorTraining extends Training {
-    /** Бали навантаження за один кілометр дистанції. */
-    public static final double POINTS_PER_KM = 3.0;
+Уточнення варіанта: таблиця ЛР4 називає поля «тривалість, дистанція, пульс», але формат CSV закріплено в ЛР1 (date;kind;minutes;distanceKm;calories) і змінювати його заборонено. Тому запит статистики будується за полем calories (витрата калорій). Поріг фільтра – константа MIN_MINUTES = 45; у даних є значення до межі (30, 40), на межі (45) і після (60–120).
 
-    /**
-     * Створює тренування на відкритому повітрі.
-     *
-     * @param date дата
-     * @param kind вид, для якого {@link TrainingKind#isOutdoor()} істинне
-     * @param minutes тривалість, хв
-     * @param distanceKm дистанція, км; має бути додатною
-     * @param calories калорії
-     */
-    public OutdoorTraining(LocalDate date, TrainingKind kind, int minutes, double distanceKm, int calories) {
-        // Спочатку базовий клас перевіряє спільний стан, потім підтип - власне правило.
-        super(date, kind, minutes, distanceKm, calories);
-        if (!kind.isOutdoor()) {
-            throw new IllegalArgumentException("вид %s не є тренуванням надворі".formatted(kind.label()));
-        }
-        if (distanceKm <= 0) {
-            throw new IllegalArgumentException("дистанція тренування надворі має бути додатною");
-        }
-    }
+## П'ять запитів
 
-    /** Навантаження = хвилини + 3 бали за км + калорії / 10. */
-    @Override
-    public double load() {
-        return getMinutes() + getDistanceKm() * POINTS_PER_KM + getCalories() / 10.0;
-    }
-}
-```
+*Таблиця 2 – Запити класу TrainingQueries*
 
-*Лістинг 3 – src/main/java/ua/lpnu/kzp/IndoorTraining.java*
+| № | Метод | Проміжні операції | Кінцева | Тип результату |
+|---|---|---|---|---|
+| 1 | longTrainings | filter(minutes >= 45) | toList() | List<Training> |
+| 2 | distances | map(getDistanceKm) | toList() | List<Double> |
+| 3 | distanceByKind | – | collect(groupingBy) | Map<TrainingKind, Double> |
+| 4 | calorieStatistics | – | collect(summarizingInt) | IntSummaryStatistics |
+| 5 | topByDistance | sorted(comparator), limit(N) | toList() | List<Training> |
+| + | findByDate | filter(date) | findFirst() | Optional<Training> |
+
+*Лістинг 1 – src/main/java/ua/lpnu/kzp/TrainingQueries.java*
 
 ```text
 package ua.lpnu.kzp;
 
 import java.time.LocalDate;
+import java.util.Comparator;
+import java.util.EnumMap;
+import java.util.IntSummaryStatistics;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
-/** Тренування в приміщенні: плавання, тренажери. */
-public final class IndoorTraining extends Training {
-    /** Коефіцієнт інтенсивності для тренувань у приміщенні. */
-    public static final double INTENSITY = 1.2;
+/** Набір чистих потокових запитів до колекції тренувань (варіант 2). */
+public final class TrainingQueries {
+    /** Поріг фільтра: тривалість не менша 45 хв. */
+    public static final int MIN_MINUTES = 45;
+    /** Кількість записів у запиті top-N. */
+    public static final int TOP_N = 5;
 
-    /**
-     * Створює тренування в приміщенні.
-     *
-     * @param date дата
-     * @param kind вид, для якого {@link TrainingKind#isOutdoor()} хибне
-     * @param minutes тривалість, хв
-     * @param distanceKm дистанція, км; для тренажерів допускається 0
-     * @param calories калорії
-     */
-    public IndoorTraining(LocalDate date, TrainingKind kind, int minutes, double distanceKm, int calories) {
-        super(date, kind, minutes, distanceKm, calories);
-        if (kind.isOutdoor()) {
-            throw new IllegalArgumentException("вид %s не є тренуванням у приміщенні".formatted(kind.label()));
-        }
+    /** Дистанція за спаданням, за рівності - дата за зростанням. */
+    public static final Comparator<Training> BY_DISTANCE_DESC_THEN_DATE =
+            Comparator.comparingDouble(Training::getDistanceKm)
+                    .reversed()
+                    .thenComparing(Training::getDate);
+
+    /* Забороняє створення екземплярів класу статичних запитів. */
+    private TrainingQueries() {
     }
 
-    /** Навантаження = хвилини · 1.2 + калорії / 10 (дистанція не враховується). */
-    @Override
-    public double load() {
-        return getMinutes() * INTENSITY + getCalories() / 10.0;
+    /**
+     * Запит 1 (filter): тренування тривалістю не менше {@link #MIN_MINUTES} хв.
+     *
+     * @param trainings джерело
+     * @return новий незмінний список
+     */
+    public static List<Training> longTrainings(List<Training> trainings) {
+        return streamOf(trainings)
+                .filter(training -> training.getMinutes() >= MIN_MINUTES)
+                .toList();
+    }
+
+    /**
+     * Запит 2 (map): дистанції у початковому порядку.
+     *
+     * @param trainings джерело
+     * @return список дистанцій, км
+     */
+    public static List<Double> distances(List<Training> trainings) {
+        return streamOf(trainings)
+                .map(Training::getDistanceKm)
+                .toList();
+    }
+
+    /**
+     * Запит 3 (groupingBy): сумарна дистанція за видом у стабільному порядку enum.
+     *
+     * @param trainings джерело
+     * @return карта вид → сума дистанцій
+     */
+    public static Map<TrainingKind, Double> distanceByKind(List<Training> trainings) {
+        return streamOf(trainings)
+                .collect(Collectors.groupingBy(
+                        Training::getTrainingKind,
+                        () -> new EnumMap<>(TrainingKind.class),
+                        Collectors.summingDouble(Training::getDistanceKm)));
+    }
+
+    /**
+     * Запит 4 (summarizingInt): статистика витрати калорій.
+     *
+     * <p>Поле «пульс» з таблиці ЛР4 відсутнє у форматі CSV, закріпленому в ЛР1, тому
+     * статистика будується за калоріями.
+     *
+     * @param trainings джерело
+     * @return кількість, сума, мінімум, максимум і середнє
+     */
+    public static IntSummaryStatistics calorieStatistics(List<Training> trainings) {
+        return streamOf(trainings)
+                .collect(Collectors.summarizingInt(Training::getCalories));
+    }
+
+    /**
+     * Запит 5 (sorted + limit): перші N тренувань за дистанцією, потім за датою.
+     *
+     * @param trainings джерело
+     * @param limit кількість результатів, не від'ємна
+     * @return впорядкований префікс
+     * @throws IllegalArgumentException якщо {@code limit < 0}
+     */
+    public static List<Training> topByDistance(List<Training> trainings, int limit) {
+        if (limit < 0) {
+            throw new IllegalArgumentException("Ліміт не може бути від'ємним");
+        }
+        // Спочатку повний порядок, потім усікання: sorted(...).limit(N).
+        return streamOf(trainings)
+                .sorted(BY_DISTANCE_DESC_THEN_DATE)
+                .limit(limit)
+                .toList();
+    }
+
+    /**
+     * Пошук першого тренування за датою.
+     *
+     * @param trainings джерело
+     * @param date дата пошуку
+     * @return перше тренування в початковому порядку або {@link Optional#empty()}
+     */
+    public static Optional<Training> findByDate(List<Training> trainings, LocalDate date) {
+        Objects.requireNonNull(date, "Дата не може бути null");
+        return streamOf(trainings)
+                .filter(training -> training.getDate().equals(date))
+                .findFirst();
+    }
+
+    /* Перевіряє список і повертає новий потік для кожного незалежного запиту. */
+    private static Stream<Training> streamOf(List<Training> trainings) {
+        return Objects.requireNonNull(trainings, "Список не може бути null").stream();
     }
 }
 ```
 
-## enum
+## Групування та статистика
 
-TrainingKind має константи RUNNING, CYCLING, WALKING, SWIMMING, GYM з полями label (підпис у CSV і звіті) та outdoor (місце проведення). Метод fromLabel перетворює текст із CSV на константу й відхиляє невідомий вид. Значення порівнюються через ==, бо кожна константа існує в одному екземплярі. Звіт групує навантаження в EnumMap, тому порядок видів стабільний (порядок оголошення констант).
+Ключ групування – TrainingKind; карта створюється як EnumMap, тому порядок ключів стабільний і не залежить від HashMap. Агрегат – summingDouble(getDistanceKm). Статистика калорій повертає count, sum, min, max і average. Для порожнього потоку count = 0, а min/max мають службові значення Integer.MAX_VALUE/MIN_VALUE, тому звіт обробляє цей випадок явно й виводить «немає даних».
 
-*Лістинг 4 – src/main/java/ua/lpnu/kzp/TrainingKind.java*
+## Компаратор
 
-```text
-package ua.lpnu.kzp;
+BY_DISTANCE_DESC_THEN_DATE = comparingDouble(getDistanceKm).reversed().thenComparing(getDate): основний критерій – дистанція за спаданням, другий – дата за зростанням. reversed() застосовано до компаратора дистанції до додавання другого критерію, тому дата не розвертається. Порядок операцій – sorted(...).limit(N), N = 5. Записи 2026-09-01 і 2026-09-05 мають однакову дистанцію 8.50 км і перевіряють другий критерій; шостий запис (6.80 км) перевіряє усікання. limit < 0 відхиляється IllegalArgumentException, 0 дає порожній список, завеликий N – усі записи.
 
-/** Фіксований набір видів тренувань із підписом для звіту та місцем проведення. */
-public enum TrainingKind {
-    /** Біг на відкритому повітрі. */
-    RUNNING("біг", true),
-    /** Велосипедна поїздка. */
-    CYCLING("велосипед", true),
-    /** Піша прогулянка. */
-    WALKING("ходьба", true),
-    /** Плавання в басейні. */
-    SWIMMING("плавання", false),
-    /** Заняття на тренажерах у залі. */
-    GYM("тренажери", false);
+## Optional
 
-    private final String label;
-    private final boolean outdoor;
-
-    /* Конструктор enum використовується JVM для створення фіксованих констант. */
-    TrainingKind(String label, boolean outdoor) {
-        this.label = label;
-        this.outdoor = outdoor;
-    }
-
-    /** @return текстове подання виду, яке зберігається у CSV і звіті */
-    public String label() {
-        return label;
-    }
-
-    /** @return {@code true}, якщо тренування проходить на відкритому повітрі */
-    public boolean isOutdoor() {
-        return outdoor;
-    }
-
-    /**
-     * Знаходить вид за підписом із CSV.
-     *
-     * @param label підпис, наприклад {@code біг}
-     * @return відповідна константа
-     * @throws IllegalArgumentException якщо такого виду немає
-     */
-    public static TrainingKind fromLabel(String label) {
-        for (TrainingKind kind : values()) {
-            if (kind.label.equals(label)) {
-                return kind;
-            }
-        }
-        throw new IllegalArgumentException("невідомий вид тренування: %s".formatted(label));
-    }
-}
-```
-
-## equals і hashCode
-
-Критерій рівності – той самий підтип (getClass()) і всі п'ять полів (дистанція порівнюється через Double.compare). hashCode будується з тих самих полів і класу через Objects.hash, тому контракт «рівні об'єкти – рівні хеш-коди» виконується. Обидва методи final, щоб підтипи не порушили симетрію. Поля незмінні, тому об'єкт безпечно зберігати в HashSet і використовувати ключем HashMap (перевірено тестами).
-
-## Поліморфізм
-
-TrainingProcessor.totalLoad і formatLoadSection працюють зі списком List<Training> і викликають training.load() без instanceof чи switch: реалізацію обирає JVM за фактичним підтипом. Додавання нового підтипу (наприклад, TeamTraining) не потребує змін у коді звіту. Спадкування доречне, бо кожен підтип «є різновидом» тренування; звіт же лише містить список тренувань, тому для нього обрано композицію, а не extends ArrayList.
-
-*Лістинг 5 – TrainingProcessor.java (поліморфні методи)*
-
-```text
-
-    /**
-     * Обчислює сумарне навантаження через поліморфний метод без перевірки підтипу.
-     *
-     * @param trainings тренування різних підтипів
-     * @return сума {@link Training#load()}
-     */
-    public static double totalLoad(List<Training> trainings) {
-        double total = 0.0;
-        for (Training training : trainings) {
-            // Реалізацію load() обирає JVM за фактичним підтипом об'єкта.
-            total += training.load();
-        }
-        return total;
-    }
-
-    /**
-     * Формує розділ звіту про навантаження за видами та унікальні записи.
-     *
-     * @param trainings коректні тренування
-     * @return текст розділу
-     */
-    public static String formatLoadSection(List<Training> trainings) {
-        Map<TrainingKind, Double> byKind = new EnumMap<>(TrainingKind.class);
-        for (Training training : trainings) {
-            byKind.merge(training.getTrainingKind(), training.load(), Double::sum);
-        }
-        StringBuilder section = new StringBuilder();
-        section.append(String.format(Locale.ROOT, "Навантаження (поліморфний розрахунок load), бали%n"));
-        for (Map.Entry<TrainingKind, Double> entry : byKind.entrySet()) {
-            section.append(String.format(Locale.ROOT, "  %-32s %10.2f%n",
-                    entry.getKey().label() + (entry.getKey().isOutdoor() ? " (надворі)" : " (у приміщенні)"),
-                    entry.getValue()));
-        }
-        section.append(String.format(Locale.ROOT, "  %-32s %10.2f%n", "Усього", totalLoad(trainings)));
-        section.append(String.format(Locale.ROOT, "Унікальних тренувань (HashSet): %d%n",
-                new HashSet<>(trainings).size()));
-        return section.toString();
-    }
-```
+findByDate шукає перше тренування за датою. Дата 2026-09-08 зустрічається двічі (ходьба й велосипед) – повертається перший запис у початковому порядку (ходьба), що перевірено тестом. Для 2026-09-30 результат Optional.empty(), і звіт виводить «не знайдено» через map(...).orElse(...); метод ніколи не повертає null.
 
 ## Тестування
 
-Перенесено 22 тести ЛР1–ЛР2 і додано 9 тестів TrainingHierarchyTest. Єдина обґрунтована зміна старих тестів – виклик new Training(...) замінено на Training.create(...), бо базовий клас став абстрактним; перевірки й очікування не змінено. Нові тести: вибір підтипу фабрикою; різні формули load(); власне правило підтипу (ходьба з 0 км); чужий вид для підтипу; відхилення неправильного спільного стану базовим класом; пошук enum і невідомий вид; рівність, однаковий hashCode і один елемент у HashSet; ключ HashMap; поліморфна сума через базовий тип.
+Перенесено 31 тест ЛР1–ЛР3 і додано 10 тестів TrainingQueriesTest: фільтр із межею 45 хв, порядок у map, групування з явним типом ключа, статистика й порожній вхід, top-5 із другим критерієм, межі ліміту (0, 100, −1), Optional для дубльованого й відсутнього ключа, еквівалентність циклу, відсутність мутації вхідної колекції, порожній вхід для всіх запитів.
 
-*Лістинг 6 – src/test/java/ua/lpnu/kzp/TrainingHierarchyTest.java*
+*Лістинг 2 – src/test/java/ua/lpnu/kzp/TrainingQueriesTest.java*
 
 ```text
 package ua.lpnu.kzp;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.LocalDate;
-import java.util.HashMap;
-import java.util.HashSet;
+import java.util.ArrayList;
+import java.util.IntSummaryStatistics;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
-class TrainingHierarchyTest {
-    private static final LocalDate DATE = LocalDate.of(2026, 9, 8);
+class TrainingQueriesTest {
+    /* Контрольний набір: 8 записів, дубльована дата 09-08, рівна дистанція 8.50 у 09-01 і 09-05. */
+    private final List<Training> trainings = List.of(
+            Training.fromCsv("2026-09-01;біг;45;8.50;520"),
+            Training.fromCsv("2026-09-02;велосипед;90;32.00;780"),
+            Training.fromCsv("2026-09-03;плавання;40;1.50;410"),
+            Training.fromCsv("2026-09-05;біг;30;8.50;350"),
+            Training.fromCsv("2026-09-06;тренажери;60;0.00;450"),
+            Training.fromCsv("2026-09-08;ходьба;75;6.80;300"),
+            Training.fromCsv("2026-09-08;велосипед;120;41.30;820"),
+            Training.fromCsv("2026-09-10;біг;45;10.00;610"));
 
-    /* Перевіряє, що фабрика обирає підтип за видом. */
+    /* Перевіряє фільтр і межу 45 хв (45 входить, 40 - ні). */
     @Test
-    void factoryChoosesSubtypeByKind() {
-        assertInstanceOf(OutdoorTraining.class, Training.create(DATE, "біг", 45, 8.5, 520));
-        assertInstanceOf(IndoorTraining.class, Training.create(DATE, "плавання", 40, 1.5, 410));
+    void filtersLongTrainingsIncludingBoundary() {
+        List<Training> result = TrainingQueries.longTrainings(trainings);
+        assertEquals(6, result.size());
+        assertTrue(result.stream().allMatch(training -> training.getMinutes() >= 45));
+        assertTrue(result.contains(trainings.get(0)));
     }
 
-    /* Перевіряє формули поліморфного методу кожного підтипу. */
+    /* Перевіряє перетворення map і збереження порядку. */
     @Test
-    void subtypesCalculateLoadDifferently() {
-        Training outdoor = Training.create(DATE, "біг", 60, 10.0, 600);
-        Training indoor = Training.create(DATE, "тренажери", 60, 0.0, 600);
-        assertEquals(60 + 30 + 60, outdoor.load(), 0.0001);
-        assertEquals(72 + 60, indoor.load(), 0.0001);
-        assertNotEquals(outdoor.load(), indoor.load());
+    void mapsDistancesInOriginalOrder() {
+        assertEquals(List.of(8.5, 32.0, 1.5, 8.5, 0.0, 6.8, 41.3, 10.0),
+                TrainingQueries.distances(trainings));
     }
 
-    /* Перевіряє власне правило підтипу: надворі дистанція має бути додатною. */
+    /* Перевіряє групування з явним типом ключа. */
     @Test
-    void outdoorRejectsZeroDistance() {
-        assertThrows(IllegalArgumentException.class, () -> Training.create(DATE, "ходьба", 30, 0.0, 100));
+    void groupsDistanceByKind() {
+        Map<TrainingKind, Double> result = TrainingQueries.distanceByKind(trainings);
+        assertEquals(27.0, result.get(TrainingKind.RUNNING), 0.0001);
+        assertEquals(73.3, result.get(TrainingKind.CYCLING), 0.0001);
+        assertEquals(0.0, result.get(TrainingKind.GYM), 0.0001);
+        assertEquals(5, result.size());
     }
 
-    /* Перевіряє, що підтип не приймає вид іншої категорії. */
+    /* Перевіряє зведену статистику та порожній вхід. */
     @Test
-    void subtypeRejectsForeignKind() {
-        assertThrows(IllegalArgumentException.class,
-                () -> new IndoorTraining(DATE, TrainingKind.RUNNING, 30, 5.0, 300));
-        assertThrows(IllegalArgumentException.class,
-                () -> new OutdoorTraining(DATE, TrainingKind.GYM, 30, 1.0, 300));
+    void summarizesCaloriesAndEmptyInput() {
+        IntSummaryStatistics statistics = TrainingQueries.calorieStatistics(trainings);
+        assertEquals(8, statistics.getCount());
+        assertEquals(4240, statistics.getSum());
+        assertEquals(300, statistics.getMin());
+        assertEquals(820, statistics.getMax());
+        assertEquals(530.0, statistics.getAverage(), 0.0001);
+        assertEquals(0, TrainingQueries.calorieStatistics(List.of()).getCount());
     }
 
-    /* Перевіряє, що базовий тип відхиляє неправильний спільний стан. */
+    /* Перевіряє top-5, другий критерій і усікання шостого запису. */
     @Test
-    void baseTypeRejectsInvalidCommonState() {
-        assertThrows(IllegalArgumentException.class, () -> Training.create(DATE, "плавання", -5, 1.0, 100));
-        assertThrows(NullPointerException.class,
-                () -> new IndoorTraining(DATE, null, 30, 1.0, 300));
+    void ordersTopByDistanceThenDate() {
+        List<Training> top = TrainingQueries.topByDistance(trainings, 5);
+        assertEquals(List.of(41.3, 32.0, 10.0, 8.5, 8.5),
+                top.stream().map(Training::getDistanceKm).toList());
+        // За рівної дистанції 8.50 раніша дата стоїть першою.
+        assertEquals(LocalDate.of(2026, 9, 1), top.get(3).getDate());
+        assertEquals(LocalDate.of(2026, 9, 5), top.get(4).getDate());
     }
 
-    /* Перевіряє пошук enum за підписом і невідомий вид. */
+    /* Перевіряє нульовий, завеликий і від'ємний ліміт. */
     @Test
-    void enumFindsByLabel() {
-        assertEquals(TrainingKind.CYCLING, TrainingKind.fromLabel("велосипед"));
-        assertTrue(TrainingKind.CYCLING.isOutdoor());
-        assertThrows(IllegalArgumentException.class, () -> TrainingKind.fromLabel("йога"));
+    void handlesLimitBoundaries() {
+        assertEquals(List.of(), TrainingQueries.topByDistance(trainings, 0));
+        assertEquals(8, TrainingQueries.topByDistance(trainings, 100).size());
+        assertThrows(IllegalArgumentException.class, () -> TrainingQueries.topByDistance(trainings, -1));
     }
 
-    /* Перевіряє, що рівні об'єкти мають однаковий hashCode і не дублюються в HashSet. */
+    /* Перевіряє Optional: дубльований ключ повертає перший запис, відсутній - empty. */
     @Test
-    void equalObjectsHaveOneSetEntry() {
-        Training first = Training.create(DATE, "біг", 45, 8.5, 520);
-        Training second = Training.fromCsv("2026-09-08;біг;45;8.50;520");
-        assertEquals(first, second);
-        assertEquals(first.hashCode(), second.hashCode());
-        Set<Training> set = new HashSet<>(List.of(first, second));
-        assertEquals(1, set.size());
+    void findsFirstByDateOrEmpty() {
+        Optional<Training> found = TrainingQueries.findByDate(trainings, LocalDate.of(2026, 9, 8));
+        assertEquals(TrainingKind.WALKING, found.orElseThrow().getTrainingKind());
+        assertTrue(TrainingQueries.findByDate(trainings, LocalDate.of(2026, 9, 30)).isEmpty());
+        assertTrue(TrainingQueries.findByDate(List.of(), LocalDate.of(2026, 9, 8)).isEmpty());
     }
 
-    /* Перевіряє, що логічно рівний об'єкт знаходиться як ключ HashMap. */
+    /* Перевіряє еквівалентність потокового підсумку та циклу ЛР2. */
     @Test
-    void equalObjectWorksAsMapKey() {
-        Map<Training, String> notes = new HashMap<>();
-        notes.put(Training.create(DATE, "плавання", 40, 1.5, 410), "басейн");
-        assertEquals("басейн", notes.get(Training.create(DATE, "плавання", 40, 1.5, 410)));
+    void streamSummaryMatchesLegacyLoop() {
+        int minutes = 0;
+        double distance = 0;
+        int maxCalories = 0;
+        for (Training training : trainings) {
+            minutes += training.getMinutes();
+            distance += training.getDistanceKm();
+            maxCalories = Math.max(maxCalories, training.getCalories());
+        }
+        DurationDistance summary = DurationDistance.of(trainings);
+        assertEquals(minutes, summary.totalMinutes());
+        assertEquals(distance, summary.totalDistance(), 0.0001);
+        assertEquals(maxCalories, summary.maxCalories());
+        assertEquals(new DurationDistance(0, 0, 0.0, 0), DurationDistance.of(List.of()));
     }
 
-    /* Перевіряє, що поліморфна сума не залежить від порядку і не перевіряє підтип. */
+    /* Перевіряє, що запити не змінюють вхідну колекцію. */
     @Test
-    void polymorphicTotalUsesBaseType() {
-        List<Training> trainings = List.of(
-                Training.create(DATE, "біг", 60, 10.0, 600),
-                Training.create(DATE, "тренажери", 60, 0.0, 600));
-        assertEquals(150 + 132, TrainingProcessor.totalLoad(trainings), 0.0001);
+    void queriesDoNotMutateInput() {
+        List<Training> source = new ArrayList<>(trainings);
+        List<Training> before = List.copyOf(source);
+        TrainingQueries.longTrainings(source);
+        TrainingQueries.distances(source);
+        TrainingQueries.distanceByKind(source);
+        TrainingQueries.calorieStatistics(source);
+        TrainingQueries.topByDistance(source, 3);
+        TrainingQueries.findByDate(source, LocalDate.of(2026, 9, 8));
+        assertEquals(before, source);
+    }
+
+    /* Перевіряє порожній вхід для всіх запитів. */
+    @Test
+    void handlesEmptyInput() {
+        assertTrue(TrainingQueries.longTrainings(List.of()).isEmpty());
+        assertTrue(TrainingQueries.distances(List.of()).isEmpty());
+        assertTrue(TrainingQueries.distanceByKind(List.of()).isEmpty());
+        assertTrue(TrainingQueries.topByDistance(List.of(), 5).isEmpty());
     }
 }
 ```
 
-*Лістинг 7 – Результат mvnw.cmd -B clean verify*
+*Лістинг 3 – Результат mvnw.cmd -B clean verify*
 
 ```text
-[INFO] Building kzp-lab-andrushko 1.2.0
-[INFO] Tests run: 9, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.084 s -- in ua.lpnu.kzp.TrainingHierarchyTest
-[INFO] Tests run: 10, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.096 s -- in ua.lpnu.kzp.TrainingProcessorTest
-[INFO] Tests run: 12, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.057 s -- in ua.lpnu.kzp.TrainingTest
-[INFO] Tests run: 31, Failures: 0, Errors: 0, Skipped: 0
-[INFO] Building jar: C:\Users\user\kzp-labs\lab03\target\kzp-lab-andrushko-1.2.0.jar
+[INFO] Building kzp-lab-andrushko 1.3.0
+[INFO] Tests run: 9, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.092 s -- in ua.lpnu.kzp.TrainingHierarchyTest
+[INFO] Tests run: 10, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.117 s -- in ua.lpnu.kzp.TrainingProcessorTest
+[INFO] Tests run: 10, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.042 s -- in ua.lpnu.kzp.TrainingQueriesTest
+[INFO] Tests run: 12, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.027 s -- in ua.lpnu.kzp.TrainingTest
+[INFO] Tests run: 41, Failures: 0, Errors: 0, Skipped: 0
+[INFO] Building jar: C:\Users\user\kzp-labs\lab04\target\kzp-lab-andrushko-1.3.0.jar
 [INFO] BugInstance size is 0
 [INFO] No errors/warnings found
 [INFO] BUILD SUCCESS
@@ -539,7 +342,7 @@ class TrainingHierarchyTest {
 
 ## Інфраструктура
 
-Під час першого verify SpotBugs знайшов дефект CT_CONSTRUCTOR_THROW: конструктор незавершеного (не final) класу Training кидав виняток із тіла, залишаючи частково створений об'єкт (вразливість до Finalizer-атаки). Його оформлено як bug-Issue та виправлено за схемою з методичних вказівок: перевірка виконується у виразах аргументів делегованого виклику this(…) до входу в тіло конструктора. Повторний verify – BUILD SUCCESS, «No errors/warnings found». CI: посилання на запуск GitHub Actions і артефакт – після push.
+Команди: mvnw.cmd test, mvnw.cmd verify, mvnw.cmd package, java -jar target/kzp-lab-andrushko-1.3.0.jar. SpotBugs у фазі verify – без зауважень. CI на Ubuntu, Windows і macOS та JAR-артефакт: посилання на запуск – після push.
 
 ## GitHub Issues і Pull Request
 
@@ -547,18 +350,16 @@ class TrainingHierarchyTest {
 
 | Issue | Мітка | Зміна | Перевірка |
 |---|---|---|---|
-| Абстрактний базовий тип Training | feature | спільні поля, load() | baseTypeRejects… |
-| Підтипи Indoor/Outdoor | feature | формули load(), власні правила | subtypesCalculate… |
-| enum TrainingKind | feature | label, outdoor, fromLabel | enumFindsByLabel |
-| equals/hashCode | feature | рівність за класом і полями | HashSet, HashMap |
-| [bug] SpotBugs CT_CONSTRUCTOR_THROW | bug | перевірка до тіла конструктора | verify без помилок |
-| Документація ЛР3 | docs | README, javadoc, REPORT | рев'ю PR |
+| Запити filter і map | feature | longTrainings, distances | тести межі й порядку |
+| Групування та статистика | feature | distanceByKind, calorieStatistics | groupsDistanceByKind, summarizes… |
+| Top-N зі складеним компаратором | feature | topByDistance | ordersTop…, handlesLimit… |
+| Пошук через Optional | feature | findByDate | findsFirstByDateOrEmpty |
+| Заміна циклів у звіті | feature | DurationDistance.of, totalLoad | streamSummaryMatchesLegacyLoop |
+| Документація ЛР4 | docs | README, javadoc, REPORT | рев'ю PR |
 
-## Порівняння поведінки
+## Результати запитів
 
-Перші 12 рядків звіту (показники й повідомлення про помилки) збігаються з ЛР1–ЛР2; після них додано розділ поліморфного навантаження. Перевірка вручну для бігу: (45+25.5+52) + (30+25.5+35) + (45+30+61) = 349.00 бала.
-
-*Лістинг 8 – Вивід версії 1.2.0*
+*Лістинг 4 – Вивід версії 1.3.0*
 
 ```text
 Звіт: спортивні тренування
@@ -581,8 +382,33 @@ class TrainingHierarchyTest {
   тренажери (у приміщенні)             117.00
   Усього                              1270.30
 Унікальних тренувань (HashSet): 8
+Запити Stream API
+1. Тривалість >= 45 хв: 6 записів
+   2026-09-01 біг: 45 хв, 8.50 км, 520 ккал
+   2026-09-02 велосипед: 90 хв, 32.00 км, 780 ккал
+   2026-09-06 тренажери: 60 хв, 0.00 км, 450 ккал
+   2026-09-08 ходьба: 75 хв, 6.80 км, 300 ккал
+   2026-09-08 велосипед: 120 хв, 41.30 км, 820 ккал
+   2026-09-10 біг: 45 хв, 10.00 км, 610 ккал
+2. Дистанції, км: [8.50, 32.00, 1.50, 8.50, 0.00, 6.80, 41.30, 10.00]
+3. Сумарна дистанція за видом: {біг=27.00, велосипед=73.30, ходьба=6.80, плавання=1.50, тренажери=0.00}
+4. Статистика калорій: count=8, sum=4240, min=300, max=820, avg=530.00
+5. Top-5 за дистанцією (спадання), потім за датою:
+   2026-09-08 велосипед: 120 хв, 41.30 км, 820 ккал
+   2026-09-02 велосипед: 90 хв, 32.00 км, 780 ккал
+   2026-09-10 біг: 45 хв, 10.00 км, 610 ккал
+   2026-09-01 біг: 45 хв, 8.50 км, 520 ккал
+   2026-09-05 біг: 30 хв, 8.50 км, 350 ккал
+Пошук за датою 2026-09-08: 2026-09-08 ходьба: 75 хв, 6.80 км, 300 ккал
+Пошук за датою 2026-09-30: не знайдено
 Звіт записано у out\report.txt
 ```
+
+Перші 12 рядків звіту ідентичні попереднім версіям; розділ «Запити Stream API» додано наприкінці.
+
+## Порівняння реалізацій
+
+Потокова версія читабельніша там, де обчислення – послідовність кроків «відібрати → перетворити → зібрати»: намір видно з назв операцій, накопичувальні змінні зникли, групування в EnumMap займає один вираз. Водночас кількість рядків не є критерієм: форматування результатів залишилося звичайним кодом, а для простих сум потік лише трохи коротший за цикл. Важливіше, що запити стали чистими функціями без побічних ефектів, які легко тестувати окремо.
 
 ## Академічна доброчесність
 
@@ -590,87 +416,87 @@ class TrainingHierarchyTest {
 
 ## Відповіді на контрольні питання
 
-1. Яку спільну проблему розв'язує базовий тип у предметній області?
+1. Чим потік відрізняється від колекції?
 
-Спільні поля й перевірки всіх тренувань описано один раз, а код звіту працює з одним типом Training незалежно від підтипу.
+Колекція зберігає елементи; потік лише описує обчислення над джерелом і не зберігає даних, використовується один раз.
 
-2. Чим відрізняються extends і implements?
+2. Які частини має типовий конвеєр Stream API?
 
-extends успадковує клас (стан і реалізацію, лише один батько), implements зобов'язує клас реалізувати контракт інтерфейсу (інтерфейсів може бути кілька).
+Джерело (list.stream()), проміжні операції (filter, map, sorted) і кінцева операція (toList, collect, findFirst).
 
-3. Навіщо базовий клас може бути abstract?
+3. Чому проміжні операції називають лінивими?
 
-Щоб заборонити створення «тренування взагалі» і змусити кожен підтип реалізувати load().
+Вони не виконуються, доки не викликано кінцеву операцію; лише вона запускає конвеєр.
 
-4. Яку роль виконує виклик super(...) у конструкторі підтипу?
+4. Що робить filter і який тип має його предикат?
 
-Спочатку ініціалізує й перевіряє спільну частину об'єкта в базовому класі, лише потім підтип перевіряє власне правило.
+Залишає елементи, для яких Predicate<T> повертає true; у мене – training -> training.getMinutes() >= 45.
 
-5. Що перевіряє анотація @Override?
+5. Чим map відрізняється від mapToDouble?
 
-Що метод справді перевизначає метод супертипу; помилка в назві чи параметрах стане помилкою компіляції.
+map повертає Stream<R> з об'єктами (Double пакується), mapToDouble – DoubleStream примітивів із методами sum, average.
 
-6. Що таке поліморфізм і як він усуває розгалуження за типом?
+6. Для чого застосовується distinct і від чого залежить його результат?
 
-Змінна базового типу посилається на об'єкт підтипу, а виклик load() виконує реалізацію фактичного об'єкта, тому if (x instanceof …) не потрібен.
+Прибирає повтори; результат залежить від коректних equals/hashCode, реалізованих у ЛР3.
 
-7. Коли краще використати інтерфейс, а коли абстрактний клас?
+7. Чому порядок sorted().limit(N) відрізняється від limit(N).sorted()?
 
-Інтерфейс – для спільної можливості без стану або коли потрібно кілька контрактів; абстрактний клас – коли підтипи мають спільний стан і реалізацію, як у моєму Training.
+Перший варіант дає N найкращих з усієї колекції, другий сортує лише перші N вхідних елементів.
 
-8. Що означає відношення «є різновидом» і чим воно відрізняється від композиції?
+8. Яку роль виконує кінцева операція?
 
-is-a: біг є тренуванням, тому OutdoorTraining extends Training. has-a: звіт містить список тренувань, тож список – поле, а не батьківський клас.
+Запускає обчислення й повертає результат або побічний ефект.
 
-9. Для чого використовують enum із полями та методами?
+9. Коли застосовується Collectors.joining?
 
-Для фіксованої множини значень із пов'язаними даними: TrainingKind зберігає підпис і ознаку «надворі», а fromLabel перетворює текст CSV.
+Для збирання рядків в один текст із роздільником, префіксом і суфіксом – у моєму звіті список дистанцій [8.50, 32.00, …].
 
-10. Чому значення enum можна порівнювати через ==?
+10. Як groupingBy будує карту груп?
 
-Кожна константа створюється JVM один раз, тому однакові значення – той самий об'єкт.
+Для кожного елемента обчислює ключ (getTrainingKind) і додає елемент до групи цього ключа; фабрика карти й downstream-колектор задаються додатковими аргументами.
 
-11. Які правила має виконувати пара equals/hashCode?
+11. Як отримати суму в кожній групі через downstream collector?
 
-Рефлексивність, симетричність, транзитивність, узгодженість; якщо a.equals(b), то a.hashCode() == b.hashCode().
+groupingBy(Training::getTrainingKind, () -> new EnumMap<>(TrainingKind.class), summingDouble(Training::getDistanceKm)).
 
-12. Чому змінне поле небезпечне для об'єкта, який є ключем HashMap?
+12. Які показники містить DoubleSummaryStatistics?
 
-Після зміни поля змінюється хеш-код, і об'єкт опиняється не в тому кошику – його вже неможливо знайти.
+count, sum, min, max, average (у мене аналогічний IntSummaryStatistics).
 
-13. Чому два об'єкти різних підтипів можуть бути нерівними за однакової назви?
+13. Які значення має статистика для порожнього потоку?
 
-Бо критерій рівності включає getClass(): тренування різних категорій мають різну поведінку й не вважаються одним записом.
+count = 0, sum = 0, average = 0; min – максимальне можливе значення, max – мінімальне (для double ±Infinity), тому порожній випадок обробляється явно.
 
-14. Як поліморфна колекція обробляє об'єкти різних підтипів?
+14. Як утворюється складений компаратор?
 
-Зберігає їх як List<Training> і викликає спільні методи; диспетчеризація відбувається під час виконання.
+Comparator.comparingDouble(...) для основного ключа, .reversed() для напрямку, .thenComparing(...) для другого ключа.
 
-15. Які тести доводять, що підтипи мають різну поведінку?
+15. Чому reversed() потрібно застосовувати до окремого ключа до thenComparing?
 
-subtypesCalculateLoadDifferently – однакові дані дають 150 і 132 бали.
+reversed() розвертає весь уже складений компаратор; викликаний після thenComparing, він розвернув би й дату.
 
-16. Які тести доводять коректність рівності в HashSet?
+16. Яку проблему розв'язує Optional у методі пошуку?
 
-equalObjectsHaveOneSetEntry (два рівні об'єкти – один елемент) і equalObjectWorksAsMapKey.
+Явно показує можливу відсутність результату й змушує викликача обрати поведінку замість ризику NullPointerException.
 
-17. Що контролює sealed і навіщо потрібен permits?
+17. Чим відрізняються orElse, orElseThrow і ifPresent?
 
-sealed обмежує перелік безпосередніх підтипів, permits їх перелічує; компілятор тоді перевіряє вичерпність switch.
+orElse повертає значення за замовчуванням, orElseThrow кидає виняток, ifPresent виконує дію лише за наявності значення.
 
-18. Чому switch за підтипами не повинен дублювати поліморфні методи?
+18. Чому накопичення результату через зовнішній змінний список у forEach небажане?
 
-Логіку довелося б підтримувати у двох місцях, і новий підтип легко забути в одному з них.
+Це побічний ефект: код гірше читається, не безпечний для паралельних потоків; краще map(...).toList().
 
-19. Які попередні тести та результати потрібно зберегти після перебудови?
+19. Які властивості мають бути перевірені під час рефакторингу циклу на потік?
 
-Усі 22 тести ЛР1–ЛР2 і перші рядки звіту з чотирма показниками та повідомленнями про помилки.
+Значення сум/мінімуму/максимуму, порядок, дублікати, порожній вхід, межі limit, відсутність мутації джерела, проходження старих тестів.
 
-20. Яке рішення у Вашій ієрархії найкраще демонструє перевагу поліморфізму?
+20. За яких умов паралельний потік може бути виправданим?
 
-totalLoad: один рядок training.load() у циклі коректно обробляє обидва підтипи й не зміниться, якщо додати третій.
+Великий обсяг даних, дорогі незалежні обчислення, асоціативні операції без спільного змінного стану та підтверджене вимірюванням прискорення.
 
 ## Висновки
 
-Створено абстрактний тип Training, два підтипи з різними правилами й формулами load(), enum TrainingKind, узгоджені equals/hashCode. Звіт зберіг показники попередніх робіт і отримав поліморфний розділ навантаження. 31 тест проходить, знайдений SpotBugs дефект усунуто. Поліморфна модель стане джерелом для потокових запитів ЛР4.
+Обчислення ЛР1–ЛР3 перенесено на Stream API, додано п'ять запитів і пошук через Optional. Результати збігаються з цикловою реалізацією (тест еквівалентності та незмінні рядки звіту), 41 тест проходить, SpotBugs без зауважень. Ці запити стануть основою ЛР5, де дані зберігатимуться в параметризованому сховищі й експортуватимуться в CSV.
 

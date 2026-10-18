@@ -1,11 +1,14 @@
 package ua.lpnu.kzp;
 
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.HashSet;
+import java.util.IntSummaryStatistics;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * Читає список тренувань із рядків і формує звіт.
@@ -106,12 +109,8 @@ public final class TrainingProcessor {
      * @return сума {@link Training#load()}
      */
     public static double totalLoad(List<Training> trainings) {
-        double total = 0.0;
-        for (Training training : trainings) {
-            // Реалізацію load() обирає JVM за фактичним підтипом об'єкта.
-            total += training.load();
-        }
-        return total;
+        // Реалізацію load() обирає JVM за фактичним підтипом об'єкта.
+        return trainings.stream().mapToDouble(Training::load).sum();
     }
 
     /**
@@ -121,10 +120,10 @@ public final class TrainingProcessor {
      * @return текст розділу
      */
     public static String formatLoadSection(List<Training> trainings) {
-        Map<TrainingKind, Double> byKind = new EnumMap<>(TrainingKind.class);
-        for (Training training : trainings) {
-            byKind.merge(training.getTrainingKind(), training.load(), Double::sum);
-        }
+        Map<TrainingKind, Double> byKind = trainings.stream()
+                .collect(Collectors.groupingBy(Training::getTrainingKind,
+                        () -> new EnumMap<>(TrainingKind.class),
+                        Collectors.summingDouble(Training::load)));
         StringBuilder section = new StringBuilder();
         section.append(String.format(Locale.ROOT, "Навантаження (поліморфний розрахунок load), бали%n"));
         for (Map.Entry<TrainingKind, Double> entry : byKind.entrySet()) {
@@ -135,6 +134,51 @@ public final class TrainingProcessor {
         section.append(String.format(Locale.ROOT, "  %-32s %10.2f%n", "Усього", totalLoad(trainings)));
         section.append(String.format(Locale.ROOT, "Унікальних тренувань (HashSet): %d%n",
                 new HashSet<>(trainings).size()));
+        return section.toString();
+    }
+
+    /**
+     * Формує розділ звіту з результатами п'яти Stream-запитів і пошуку Optional.
+     *
+     * @param trainings коректні тренування
+     * @param searchDates дати для демонстрації знайденого й відсутнього результату
+     * @return текст розділу
+     */
+    public static String formatQueriesSection(List<Training> trainings, List<LocalDate> searchDates) {
+        StringBuilder section = new StringBuilder();
+        section.append(String.format(Locale.ROOT, "Запити Stream API%n"));
+        List<Training> longOnes = TrainingQueries.longTrainings(trainings);
+        section.append(String.format(Locale.ROOT, "1. Тривалість >= %d хв: %d записів%n",
+                TrainingQueries.MIN_MINUTES, longOnes.size()));
+        longOnes.forEach(training -> section.append("   ").append(training).append(System.lineSeparator()));
+        section.append(String.format(Locale.ROOT, "2. Дистанції, км: %s%n",
+                TrainingQueries.distances(trainings).stream()
+                        .map(distance -> String.format(Locale.ROOT, "%.2f", distance))
+                        .collect(Collectors.joining(", ", "[", "]"))));
+        section.append(String.format(Locale.ROOT, "3. Сумарна дистанція за видом: %s%n",
+                TrainingQueries.distanceByKind(trainings).entrySet().stream()
+                        .map(entry -> String.format(Locale.ROOT, "%s=%.2f",
+                                entry.getKey().label(), entry.getValue()))
+                        .collect(Collectors.joining(", ", "{", "}"))));
+        IntSummaryStatistics calories = TrainingQueries.calorieStatistics(trainings);
+        if (calories.getCount() == 0) {
+            section.append(String.format(Locale.ROOT, "4. Статистика калорій: немає даних%n"));
+        } else {
+            section.append(String.format(Locale.ROOT,
+                    "4. Статистика калорій: count=%d, sum=%d, min=%d, max=%d, avg=%.2f%n",
+                    calories.getCount(), calories.getSum(), calories.getMin(),
+                    calories.getMax(), calories.getAverage()));
+        }
+        section.append(String.format(Locale.ROOT, "5. Top-%d за дистанцією (спадання), потім за датою:%n",
+                TrainingQueries.TOP_N));
+        TrainingQueries.topByDistance(trainings, TrainingQueries.TOP_N)
+                .forEach(training -> section.append("   ").append(training).append(System.lineSeparator()));
+        for (LocalDate date : searchDates) {
+            section.append(String.format(Locale.ROOT, "Пошук за датою %s: %s%n", date,
+                    TrainingQueries.findByDate(trainings, date)
+                            .map(Training::toString)
+                            .orElse("не знайдено")));
+        }
         return section.toString();
     }
 

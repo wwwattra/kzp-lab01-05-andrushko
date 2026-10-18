@@ -20,20 +20,17 @@ public record DurationDistance(int count, int totalMinutes, double totalDistance
     }
 
     /**
-     * Обчислює підсумок для списку тренувань.
+     * Обчислює підсумок для списку тренувань потоковими операціями.
      *
      * @param trainings коректні тренування
      * @return підсумкові показники
      */
     public static DurationDistance of(List<Training> trainings) {
-        int minutes = 0;
-        double distance = 0.0;
-        int maxCalories = 0;
-        for (Training training : trainings) {
-            minutes += training.getMinutes();
-            distance += training.getDistanceKm();
-            maxCalories = Math.max(maxCalories, training.getCalories());
-        }
-        return new DurationDistance(trainings.size(), minutes, distance, maxCalories);
+        // Після ЛР4 ручний цикл замінено числовими потоками; результат не змінився.
+        return new DurationDistance(
+                trainings.size(),
+                trainings.stream().mapToInt(Training::getMinutes).sum(),
+                trainings.stream().mapToDouble(Training::getDistanceKm).sum(),
+                trainings.stream().mapToInt(Training::getCalories).max().orElse(0));
     }
 }
