@@ -1,340 +1,769 @@
-# Звіт до лабораторної роботи №4
+# Звіт до лабораторної роботи №5
 
-з дисципліни «Кросплатформні засоби програмування», тема «Потокова обробка даних у Java-проєкті». Варіант 2. Спортивні тренування.
+з дисципліни «Кросплатформні засоби програмування», тема «Параметризоване сховище, винятки й CSV-експорт у Java-проєкті». Варіант 2. Спортивні тренування.
 Виконав: студент групи КІ-302 Андрушко А. І. Прийняв: Олексів М. В.
 
 ## Тема, номер і варіант
 
-Лабораторна робота № 4 «Потокова обробка даних у Java-проєкті». Варіант 2 – «Спортивні тренування». ОС – Windows 10 (64-bit), JDK Temurin 21.0.12, Maven 3.9.11 через Wrapper. Версія продукту – 1.3.0.
+Лабораторна робота № 5 «Параметризоване сховище, винятки й CSV-експорт у Java-проєкті». Варіант 2 – «Спортивні тренування». ОС – Windows 10 (64-bit), JDK Temurin 21.0.12, Maven 3.9.11 через Wrapper. Версія продукту – 1.4.0.
 
-Посилання на GitHub-репозиторій: https://github.com/[ваш-логін]/kzp-lab-andrushko, гілка lab04, Git-тег v1.3.0.
+Посилання на GitHub-репозиторій: https://github.com/[ваш-логін]/kzp-lab-andrushko, гілка lab05, Git-тег v1.4.0.
 
 ## Мета роботи
 
-Замінити основні циклові обчислення поліморфної моделі на декларативні запити Stream API без зміни зовнішньої поведінки: додати відбір, перетворення, групування, зведену статистику, складене впорядкування top-N і безпечний пошук через Optional.
+Завершити Java-застосунок: замінити пряме зберігання в списку на параметризоване сховище Repository<T>, додати власний виняток DataStorageException із ланцюгом причин, описати CSV-стовпці анотацією @CsvColumn, реалізувати універсальний рефлексивний експортер, записати й прочитати CSV через Path/Files з явним UTF-8 та довести round-trip «об'єкт → CSV → об'єкт».
 
 ## Стан до і після цієї роботи
 
-*Таблиця 1 – Цикл → Stream API → результат*
+До роботи тренування існували лише в пам'яті як List<Training>, звіт виводився в текстовий файл. Після роботи продукт додатково: перетворює тренування на плоскі записи TrainingRecord, зберігає їх у Repository<TrainingRecord>, експортує у out/trainings.csv (параметр --export), читає файл назад і порівнює списки. Усі попередні показники, розділ навантаження й Stream-запити виводяться без змін.
 
-| Обчислення | До (цикл) | Після (потік) | Результат |
+## Repository<T>
+
+Параметр типу T задається під час створення (Repository<TrainingRecord>), тому сховище приймає лише записи цього типу без приведень і raw types. Методи: add (відхиляє null), addAll(List<? extends T>), all() – незмінний знімок List.copyOf, find(Predicate<? super T>) – пошук за умовою, size(). Демонстрація у звіті: repository.find(record -> record.getKind() == TrainingKind.CYCLING) повертає 2 записи.
+
+*Лістинг 1 – src/main/java/ua/lpnu/kzp/Repository.java*
+
+```text
+package ua.lpnu.kzp;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
+import java.util.function.Predicate;
+
+/**
+ * Типобезпечне сховище об'єктів у пам'яті.
+ *
+ * @param <T> тип записів
+ */
+public final class Repository<T> {
+    private final List<T> items = new ArrayList<>();
+
+    /**
+     * Додає непорожній запис до сховища.
+     *
+     * @param item запис
+     */
+    public void add(T item) {
+        items.add(Objects.requireNonNull(item, "Запис не може бути null"));
+    }
+
+    /**
+     * Додає всі записи зі списку.
+     *
+     * @param newItems записи
+     */
+    public void addAll(List<? extends T> newItems) {
+        newItems.forEach(this::add);
+    }
+
+    /** @return незмінний знімок усіх записів */
+    public List<T> all() {
+        return List.copyOf(items);
+    }
+
+    /**
+     * Повертає записи, що задовольняють умову.
+     *
+     * @param condition умова для T або його супертипу
+     * @return незмінний список знайдених записів
+     */
+    public List<T> find(Predicate<? super T> condition) {
+        Objects.requireNonNull(condition, "Умова не може бути null");
+        return items.stream().filter(condition).toList();
+    }
+
+    /** @return кількість записів */
+    public int size() {
+        return items.size();
+    }
+}
+```
+
+## Модель даних
+
+*Таблиця 1 – Поля TrainingRecord*
+
+| Поле Java | Тип | @CsvColumn | Інваріант |
 |---|---|---|---|
-| Сумарний час | for + minutes += | mapToInt(getMinutes).sum() | 505 – збігся |
-| Сумарна дистанція | for + distance += | mapToDouble(getDistanceKm).sum() | 108.60 – збігся |
-| Максимум калорій | Math.max у циклі | mapToInt(getCalories).max().orElse(0) | 820 – збігся |
-| Сумарне навантаження | for + total += load() | mapToDouble(Training::load).sum() | 1270.30 – збігся |
-| Навантаження за видом | EnumMap.merge у циклі | groupingBy(..., EnumMap, summingDouble) | 5 груп – збіглися |
+| calories | int | калорії | >= 0 |
+| date | LocalDate | дата | не null, ISO YYYY-MM-DD |
+| description | String | опис | не null, може містити кому, лапки, перенесення |
+| distanceKm | double | дистанція | >= 0, скінченна |
+| durationMinutes | int | тривалість | >= 0 |
+| kind | TrainingKind (enum) | вид | не null |
 
-Еквівалентність додатково доведено тестом streamSummaryMatchesLegacyLoop, який обчислює ті самі значення старим циклом і порівнює з потоковою реалізацією.
+Уточнення варіанта. Таблиця ЛР5 визначає TrainingRecord: date, kind, durationMinutes, distanceKm, pulse. Поле пульсу відсутнє у формату вхідних даних ЛР1, тому використано calories. Оскільки серед полів варіанта немає вільного тексту, додано поле description (текстовий опис тренування з toString, напр. «2026-09-01 біг: 45 хв, 8.50 км, 520 ккал»), яке містить коми й перевіряє CSV-екранування. Ключ round-trip – date + kind. equals/hashCode використовують усі шість полів.
 
-## Контракт даних
-
-Джерело – List<Training> (поліморфні об'єкти OutdoorTraining/IndoorTraining). Поля: LocalDate date, TrainingKind kind, int minutes, double distanceKm, int calories; правила валідності – з ЛР2–ЛР3. Дати подаються через LocalDate, кількості – int, дистанція – double з форматуванням Locale.ROOT.
-
-Уточнення варіанта: таблиця ЛР4 називає поля «тривалість, дистанція, пульс», але формат CSV закріплено в ЛР1 (date;kind;minutes;distanceKm;calories) і змінювати його заборонено. Тому запит статистики будується за полем calories (витрата калорій). Поріг фільтра – константа MIN_MINUTES = 45; у даних є значення до межі (30, 40), на межі (45) і після (60–120).
-
-## П'ять запитів
-
-*Таблиця 2 – Запити класу TrainingQueries*
-
-| № | Метод | Проміжні операції | Кінцева | Тип результату |
-|---|---|---|---|---|
-| 1 | longTrainings | filter(minutes >= 45) | toList() | List<Training> |
-| 2 | distances | map(getDistanceKm) | toList() | List<Double> |
-| 3 | distanceByKind | – | collect(groupingBy) | Map<TrainingKind, Double> |
-| 4 | calorieStatistics | – | collect(summarizingInt) | IntSummaryStatistics |
-| 5 | topByDistance | sorted(comparator), limit(N) | toList() | List<Training> |
-| + | findByDate | filter(date) | findFirst() | Optional<Training> |
-
-*Лістинг 1 – src/main/java/ua/lpnu/kzp/TrainingQueries.java*
+*Лістинг 2 – src/main/java/ua/lpnu/kzp/TrainingRecord.java*
 
 ```text
 package ua.lpnu.kzp;
 
 import java.time.LocalDate;
-import java.util.Comparator;
-import java.util.EnumMap;
-import java.util.IntSummaryStatistics;
+import java.time.format.DateTimeParseException;
 import java.util.List;
-import java.util.Map;
+import java.util.Locale;
 import java.util.Objects;
-import java.util.Optional;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
-/** Набір чистих потокових запитів до колекції тренувань (варіант 2). */
-public final class TrainingQueries {
-    /** Поріг фільтра: тривалість не менша 45 хв. */
-    public static final int MIN_MINUTES = 45;
-    /** Кількість записів у запиті top-N. */
-    public static final int TOP_N = 5;
+/**
+ * Плоский запис тренування для CSV-експорту (варіант 2, TrainingRecord).
+ *
+ * <p>Поле {@code pulse} з таблиці ЛР5 замінено на {@code calories}, бо формат вхідних даних
+ * закріплено в ЛР1. Поле {@code description} містить текстовий опис із комами й потрібне для
+ * перевірки CSV-екранування.
+ */
+public final class TrainingRecord {
+    /** Кількість стовпців у CSV-експорті. */
+    public static final int COLUMN_COUNT = 6;
 
-    /** Дистанція за спаданням, за рівності - дата за зростанням. */
-    public static final Comparator<Training> BY_DISTANCE_DESC_THEN_DATE =
-            Comparator.comparingDouble(Training::getDistanceKm)
-                    .reversed()
-                    .thenComparing(Training::getDate);
+    @CsvColumn("дата")
+    private final LocalDate date;
 
-    /* Забороняє створення екземплярів класу статичних запитів. */
-    private TrainingQueries() {
-    }
+    @CsvColumn("вид")
+    private final TrainingKind kind;
 
-    /**
-     * Запит 1 (filter): тренування тривалістю не менше {@link #MIN_MINUTES} хв.
-     *
-     * @param trainings джерело
-     * @return новий незмінний список
-     */
-    public static List<Training> longTrainings(List<Training> trainings) {
-        return streamOf(trainings)
-                .filter(training -> training.getMinutes() >= MIN_MINUTES)
-                .toList();
-    }
+    @CsvColumn("тривалість")
+    private final int durationMinutes;
+
+    @CsvColumn("дистанція")
+    private final double distanceKm;
+
+    @CsvColumn("калорії")
+    private final int calories;
+
+    @CsvColumn("опис")
+    private final String description;
 
     /**
-     * Запит 2 (map): дистанції у початковому порядку.
+     * Створює перевірений запис.
      *
-     * @param trainings джерело
-     * @return список дистанцій, км
+     * @param date дата
+     * @param kind вид
+     * @param durationMinutes тривалість, хв
+     * @param distanceKm дистанція, км
+     * @param calories калорії
+     * @param description текстовий опис (може містити коми, лапки, перенесення)
      */
-    public static List<Double> distances(List<Training> trainings) {
-        return streamOf(trainings)
-                .map(Training::getDistanceKm)
-                .toList();
-    }
-
-    /**
-     * Запит 3 (groupingBy): сумарна дистанція за видом у стабільному порядку enum.
-     *
-     * @param trainings джерело
-     * @return карта вид → сума дистанцій
-     */
-    public static Map<TrainingKind, Double> distanceByKind(List<Training> trainings) {
-        return streamOf(trainings)
-                .collect(Collectors.groupingBy(
-                        Training::getTrainingKind,
-                        () -> new EnumMap<>(TrainingKind.class),
-                        Collectors.summingDouble(Training::getDistanceKm)));
-    }
-
-    /**
-     * Запит 4 (summarizingInt): статистика витрати калорій.
-     *
-     * <p>Поле «пульс» з таблиці ЛР4 відсутнє у форматі CSV, закріпленому в ЛР1, тому
-     * статистика будується за калоріями.
-     *
-     * @param trainings джерело
-     * @return кількість, сума, мінімум, максимум і середнє
-     */
-    public static IntSummaryStatistics calorieStatistics(List<Training> trainings) {
-        return streamOf(trainings)
-                .collect(Collectors.summarizingInt(Training::getCalories));
-    }
-
-    /**
-     * Запит 5 (sorted + limit): перші N тренувань за дистанцією, потім за датою.
-     *
-     * @param trainings джерело
-     * @param limit кількість результатів, не від'ємна
-     * @return впорядкований префікс
-     * @throws IllegalArgumentException якщо {@code limit < 0}
-     */
-    public static List<Training> topByDistance(List<Training> trainings, int limit) {
-        if (limit < 0) {
-            throw new IllegalArgumentException("Ліміт не може бути від'ємним");
+    public TrainingRecord(LocalDate date, TrainingKind kind, int durationMinutes,
+            double distanceKm, int calories, String description) {
+        this.date = Objects.requireNonNull(date, "Дата не може бути null");
+        this.kind = Objects.requireNonNull(kind, "Вид не може бути null");
+        this.description = Objects.requireNonNull(description, "Опис не може бути null");
+        if (durationMinutes < 0 || distanceKm < 0 || calories < 0 || !Double.isFinite(distanceKm)) {
+            throw new IllegalArgumentException("від'ємне або нескінченне числове значення");
         }
-        // Спочатку повний порядок, потім усікання: sorted(...).limit(N).
-        return streamOf(trainings)
-                .sorted(BY_DISTANCE_DESC_THEN_DATE)
-                .limit(limit)
-                .toList();
+        this.durationMinutes = durationMinutes;
+        this.distanceKm = distanceKm;
+        this.calories = calories;
     }
 
     /**
-     * Пошук першого тренування за датою.
+     * Перетворює поліморфне тренування на плоский запис.
      *
-     * @param trainings джерело
-     * @param date дата пошуку
-     * @return перше тренування в початковому порядку або {@link Optional#empty()}
+     * @param training тренування будь-якого підтипу
+     * @return запис з описом {@link Training#toString()}
      */
-    public static Optional<Training> findByDate(List<Training> trainings, LocalDate date) {
-        Objects.requireNonNull(date, "Дата не може бути null");
-        return streamOf(trainings)
-                .filter(training -> training.getDate().equals(date))
-                .findFirst();
+    public static TrainingRecord from(Training training) {
+        return new TrainingRecord(training.getDate(), training.getTrainingKind(), training.getMinutes(),
+                training.getDistanceKm(), training.getCalories(), training.toString());
     }
 
-    /* Перевіряє список і повертає новий потік для кожного незалежного запиту. */
-    private static Stream<Training> streamOf(List<Training> trainings) {
-        return Objects.requireNonNull(trainings, "Список не може бути null").stream();
+    /**
+     * Відновлює запис із CSV-полів у порядку заголовка.
+     *
+     * @param header назви стовпців (перший запис документа)
+     * @param values значення одного запису
+     * @return відновлений запис
+     * @throws DataStorageException якщо кількість полів, число, дата або enum некоректні
+     */
+    public static TrainingRecord fromFields(List<String> header, List<String> values)
+            throws DataStorageException {
+        if (values.size() != COLUMN_COUNT || header.size() != COLUMN_COUNT) {
+            throw new DataStorageException("Очікується %d полів CSV, отримано %d"
+                    .formatted(COLUMN_COUNT, values.size()));
+        }
+        try {
+            return new TrainingRecord(
+                    LocalDate.parse(value(header, values, "дата")),
+                    TrainingKind.valueOf(value(header, values, "вид")),
+                    Integer.parseInt(value(header, values, "тривалість")),
+                    Double.parseDouble(value(header, values, "дистанція")),
+                    Integer.parseInt(value(header, values, "калорії")),
+                    value(header, values, "опис"));
+        } catch (IllegalArgumentException | DateTimeParseException exception) {
+            throw new DataStorageException("Некоректний рядок тренування: %s".formatted(values), exception);
+        }
+    }
+
+    /* Повертає значення стовпця за назвою заголовка. */
+    private static String value(List<String> header, List<String> values, String column)
+            throws DataStorageException {
+        int index = header.indexOf(column);
+        if (index < 0) {
+            throw new DataStorageException("У заголовку немає стовпця %s".formatted(column));
+        }
+        return values.get(index);
+    }
+
+    /** @return дата */
+    public LocalDate getDate() {
+        return date;
+    }
+
+    /** @return вид */
+    public TrainingKind getKind() {
+        return kind;
+    }
+
+    /** @return тривалість, хв */
+    public int getDurationMinutes() {
+        return durationMinutes;
+    }
+
+    /** @return дистанція, км */
+    public double getDistanceKm() {
+        return distanceKm;
+    }
+
+    /** @return опис */
+    public String getDescription() {
+        return description;
+    }
+
+    /** Порівнює записи за всіма полями. */
+    @Override
+    public boolean equals(Object other) {
+        if (this == other) {
+            return true;
+        }
+        if (!(other instanceof TrainingRecord record)) {
+            return false;
+        }
+        return durationMinutes == record.durationMinutes
+                && Double.compare(distanceKm, record.distanceKm) == 0
+                && calories == record.calories
+                && date.equals(record.date)
+                && kind == record.kind
+                && description.equals(record.description);
+    }
+
+    /** Повертає хеш-код, узгоджений із {@code equals}. */
+    @Override
+    public int hashCode() {
+        return Objects.hash(date, kind, durationMinutes, distanceKm, calories, description);
+    }
+
+    /** Повертає ключ round-trip (дата + вид) і основні значення. */
+    @Override
+    public String toString() {
+        return String.format(Locale.ROOT, "%s/%s: %d хв, %.2f км", date, kind, durationMinutes, distanceKm);
     }
 }
 ```
 
-## Групування та статистика
+## @CsvColumn
 
-Ключ групування – TrainingKind; карта створюється як EnumMap, тому порядок ключів стабільний і не залежить від HashMap. Агрегат – summingDouble(getDistanceKm). Статистика калорій повертає count, sum, min, max і average. Для порожнього потоку count = 0, а min/max мають службові значення Integer.MAX_VALUE/MIN_VALUE, тому звіт обробляє цей випадок явно й виводить «немає даних».
+@Retention(RUNTIME) залишає анотацію в класі під час виконання, тому рефлексія читає її через getAnnotation; @Target(FIELD) дозволяє ставити її лише над полями. Єдиний елемент String value() – заголовок стовпця. Анотація не виконує експорт – вона лише описує контракт. Порядок стовпців детермінований: сортування Java-імен полів (calories, date, description, distanceKm, durationMinutes, kind).
 
-## Компаратор
+*Лістинг 3 – src/main/java/ua/lpnu/kzp/CsvColumn.java*
 
-BY_DISTANCE_DESC_THEN_DATE = comparingDouble(getDistanceKm).reversed().thenComparing(getDate): основний критерій – дистанція за спаданням, другий – дата за зростанням. reversed() застосовано до компаратора дистанції до додавання другого критерію, тому дата не розвертається. Порядок операцій – sorted(...).limit(N), N = 5. Записи 2026-09-01 і 2026-09-05 мають однакову дистанцію 8.50 км і перевіряють другий критерій; шостий запис (6.80 км) перевіряє усікання. limit < 0 відхиляється IllegalArgumentException, 0 дає порожній список, завеликий N – усі записи.
+```text
+package ua.lpnu.kzp;
 
-## Optional
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
 
-findByDate шукає перше тренування за датою. Дата 2026-09-08 зустрічається двічі (ходьба й велосипед) – повертається перший запис у початковому порядку (ходьба), що перевірено тестом. Для 2026-09-30 результат Optional.empty(), і звіт виводить «не знайдено» через map(...).orElse(...); метод ніколи не повертає null.
+/** Позначає поле, яке експортується як CSV-стовпець. */
+@Retention(RetentionPolicy.RUNTIME)
+@Target(ElementType.FIELD)
+public @interface CsvColumn {
+    /** @return заголовок CSV-стовпця */
+    String value();
+}
+```
+
+## Рефлексивний експортер
+
+CsvExporter.write(Path, Class<T>, List<? extends T>) не знає жодного доменного класу: проходить ланцюжок суперкласів до Object, відбирає поля з @CsvColumn (getDeclaredFields + isAnnotationPresent), сортує їх, відкриває доступ trySetAccessible (відмова – DataStorageException), будує заголовок і рядки зі значень field.get(record). Клас без анотованих полів відхиляється з поясненням. Екранування: значення з комою, лапкою, \r або \n береться в подвійні лапки, внутрішні лапки подвоюються. Файл записується Files.writeString з UTF-8 і TRUNCATE_EXISTING. Універсальність перевірено тестом на іншому класі OtherRecord.
+
+*Лістинг 4 – src/main/java/ua/lpnu/kzp/CsvExporter.java*
+
+```text
+package ua.lpnu.kzp;
+
+import java.io.IOException;
+import java.lang.reflect.Field;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Objects;
+import java.util.stream.Collectors;
+
+/** Експортує анотовані поля будь-якого плоского класу у CSV з кодуванням UTF-8. */
+public final class CsvExporter {
+    /* Забороняє створення екземплярів статичного експортера. */
+    private CsvExporter() {
+    }
+
+    /**
+     * Записує анотовані поля записів у UTF-8 CSV.
+     *
+     * @param <T> тип записів
+     * @param path шлях до файла
+     * @param type клас записів (потрібен для заголовка навіть без записів)
+     * @param records записи для експорту
+     * @throws DataStorageException якщо поля неможливо прочитати або файл записати
+     */
+    public static <T> void write(Path path, Class<T> type, List<? extends T> records)
+            throws DataStorageException {
+        Objects.requireNonNull(path, "Шлях не може бути null");
+        Objects.requireNonNull(records, "Записи не можуть бути null");
+        String csv = toCsv(type, records);
+        try {
+            Path parent = path.toAbsolutePath().getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
+            }
+            Files.writeString(path, csv, StandardCharsets.UTF_8,
+                    StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING,
+                    StandardOpenOption.WRITE);
+        } catch (IOException exception) {
+            throw new DataStorageException("Не вдалося записати CSV: %s".formatted(path), exception);
+        }
+    }
+
+    /**
+     * Формує текст CSV без запису у файл.
+     *
+     * @param <T> тип записів
+     * @param type клас записів
+     * @param records записи
+     * @return текст із заголовком і рядками
+     * @throws DataStorageException якщо клас не має анотованих полів або поле недоступне
+     */
+    public static <T> String toCsv(Class<T> type, List<? extends T> records) throws DataStorageException {
+        List<Field> fields = annotatedFields(type);
+        // Заголовок і значення будуються з одного детерміновано відсортованого набору полів.
+        StringBuilder csv = new StringBuilder(fields.stream()
+                .map(field -> escape(field.getAnnotation(CsvColumn.class).value()))
+                .collect(Collectors.joining(",")))
+                .append(System.lineSeparator());
+        for (T record : records) {
+            if (record == null) {
+                throw new DataStorageException("Список містить null-запис");
+            }
+            List<String> values = new ArrayList<>();
+            for (Field field : fields) {
+                try {
+                    values.add(escape(field.get(record)));
+                } catch (IllegalAccessException exception) {
+                    throw new DataStorageException(
+                            "Не вдалося прочитати поле %s".formatted(field.getName()), exception);
+                }
+            }
+            csv.append(String.join(",", values)).append(System.lineSeparator());
+        }
+        return csv.toString();
+    }
+
+    /**
+     * Повертає назви стовпців у порядку експорту.
+     *
+     * @param type клас записів
+     * @return заголовки з {@link CsvColumn}
+     * @throws DataStorageException якщо клас не має анотованих полів
+     */
+    public static List<String> header(Class<?> type) throws DataStorageException {
+        return annotatedFields(type).stream()
+                .map(field -> field.getAnnotation(CsvColumn.class).value())
+                .toList();
+    }
+
+    /* Повертає доступні анотовані поля класу та його суперкласів у стабільному порядку. */
+    private static List<Field> annotatedFields(Class<?> type) throws DataStorageException {
+        Objects.requireNonNull(type, "Тип не може бути null");
+        List<Field> fields = new ArrayList<>();
+        for (Class<?> current = type; current != null && current != Object.class;
+                current = current.getSuperclass()) {
+            fields.addAll(Arrays.stream(current.getDeclaredFields())
+                    .filter(field -> field.isAnnotationPresent(CsvColumn.class))
+                    .toList());
+        }
+        if (fields.isEmpty()) {
+            throw new DataStorageException("Клас %s не має CSV-полів".formatted(type.getSimpleName()));
+        }
+        fields.sort(Comparator.comparing(Field::getName));
+        for (Field field : fields) {
+            if (!field.trySetAccessible()) {
+                throw new DataStorageException("Немає доступу до поля %s".formatted(field.getName()));
+            }
+        }
+        return List.copyOf(fields);
+    }
+
+    /* Екранує значення за правилами CSV: кома, лапка або перенесення - у лапки. */
+    static String escape(Object value) {
+        String text = Objects.toString(value, "");
+        boolean quoted = text.contains(",") || text.contains("\"")
+                || text.contains("\r") || text.contains("\n");
+        return quoted ? "\"%s\"".formatted(text.replace("\"", "\"\"")) : text;
+    }
+}
+```
+
+*Лістинг 5 – src/main/java/ua/lpnu/kzp/CsvParser.java*
+
+```text
+package ua.lpnu.kzp;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/** Розбирає CSV-документ машиною станів із підтримкою лапок і перенесень рядка в полях. */
+public final class CsvParser {
+    /* Забороняє створення екземплярів статичного парсера. */
+    private CsvParser() {
+    }
+
+    /**
+     * Розбирає один CSV-запис.
+     *
+     * @param line текст одного запису
+     * @return значення полів
+     * @throws DataStorageException якщо текст містить не один запис або має помилку формату
+     */
+    public static List<String> parse(String line) throws DataStorageException {
+        List<List<String>> records = parseDocument(line);
+        if (records.size() != 1) {
+            throw new DataStorageException("Очікується один CSV-рядок");
+        }
+        return records.get(0);
+    }
+
+    /**
+     * Розбирає CSV-документ у список записів (не фізичних рядків).
+     *
+     * @param text увесь текст файла
+     * @return записи, кожен - список значень полів
+     * @throws DataStorageException якщо лапки незакриті або після них стоїть зайвий символ
+     */
+    public static List<List<String>> parseDocument(String text) throws DataStorageException {
+        if (text == null) {
+            throw new DataStorageException("CSV-документ не може бути null");
+        }
+        List<List<String>> records = new ArrayList<>();
+        List<String> fields = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        boolean quoted = false;
+        boolean quoteClosed = false;
+        // quoted - поле всередині лапок; quoteClosed - лапки закрито й далі допустима
+        // лише кома або кінець запису.
+        for (int index = 0; index < text.length(); index++) {
+            char symbol = text.charAt(index);
+            if (symbol == '"' && !quoted && !quoteClosed && current.length() == 0) {
+                quoted = true;
+            } else if (symbol == '"' && quoted && index + 1 < text.length()
+                    && text.charAt(index + 1) == '"') {
+                current.append('"');
+                index++;
+            } else if (symbol == '"' && quoted) {
+                quoted = false;
+                quoteClosed = true;
+            } else if (symbol == ',' && !quoted) {
+                fields.add(current.toString());
+                current.setLength(0);
+                quoteClosed = false;
+            } else if ((symbol == '\r' || symbol == '\n') && !quoted) {
+                fields.add(current.toString());
+                records.add(List.copyOf(fields));
+                fields = new ArrayList<>();
+                current.setLength(0);
+                quoteClosed = false;
+                if (symbol == '\r' && index + 1 < text.length() && text.charAt(index + 1) == '\n') {
+                    index++;
+                }
+            } else {
+                if (quoteClosed) {
+                    throw new DataStorageException("Символ після закритих CSV-лапок у позиції " + index);
+                }
+                current.append(symbol);
+            }
+        }
+        if (quoted) {
+            throw new DataStorageException("Незакриті CSV-лапки");
+        }
+        if (!fields.isEmpty() || current.length() > 0) {
+            fields.add(current.toString());
+            records.add(List.copyOf(fields));
+        }
+        return List.copyOf(records);
+    }
+}
+```
+
+## Формат CSV
+
+Кодування UTF-8, роздільник – кома, перший рядок – заголовок з @CsvColumn:
+
+*Лістинг 6 – Створений файл out/trainings.csv*
+
+```text
+калорії,дата,опис,дистанція,тривалість,вид
+520,2026-09-01,"2026-09-01 біг: 45 хв, 8.50 км, 520 ккал",8.5,45,RUNNING
+780,2026-09-02,"2026-09-02 велосипед: 90 хв, 32.00 км, 780 ккал",32.0,90,CYCLING
+410,2026-09-03,"2026-09-03 плавання: 40 хв, 1.50 км, 410 ккал",1.5,40,SWIMMING
+350,2026-09-05,"2026-09-05 біг: 30 хв, 8.50 км, 350 ккал",8.5,30,RUNNING
+450,2026-09-06,"2026-09-06 тренажери: 60 хв, 0.00 км, 450 ккал",0.0,60,GYM
+300,2026-09-08,"2026-09-08 ходьба: 75 хв, 6.80 км, 300 ккал",6.8,75,WALKING
+820,2026-09-08,"2026-09-08 велосипед: 120 хв, 41.30 км, 820 ккал",41.3,120,CYCLING
+610,2026-09-10,"2026-09-10 біг: 45 хв, 10.00 км, 610 ккал",10.0,45,RUNNING
+```
+
+Приклад екранованого рядка: поле опису 2026-09-01 біг: 45 хв, 8.50 км, 520 ккал містить коми й записане в лапках. Тест roundTripPreservesAllRecords додатково перевіряє значення з лапками та перенесенням рядка: "Парк ""Сихів"", 2 кола + новий рядок + другий рядок опису".
+
+## Імпорт і round-trip
+
+TrainingStorage.load читає весь файл Files.readString(path, UTF_8), розбирає його машиною станів CsvParser.parseDocument, яка відрізняє кому й перенесення рядка всередині та поза лапками і повертає список записів (а не фізичних рядків). Перший запис – заголовок; кожен наступний відновлюється TrainingRecord.fromFields(header, values), що знаходить значення за назвою стовпця, розбирає LocalDate, enum TrainingKind.valueOf, int і double. Порівняння repository.all().equals(restored) перевіряє поля, порядок, enum, дати, числа й текст з комами.
+
+*Лістинг 7 – src/main/java/ua/lpnu/kzp/TrainingStorage.java*
+
+```text
+package ua.lpnu.kzp;
+
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+
+/** Зберігає записи тренувань у CSV і відновлює їх назад (round-trip). */
+public final class TrainingStorage {
+    /* Забороняє створення екземплярів службового класу. */
+    private TrainingStorage() {
+    }
+
+    /**
+     * Експортує вміст сховища у CSV.
+     *
+     * @param path шлях до файла
+     * @param repository сховище записів
+     * @throws DataStorageException якщо експорт неможливий
+     */
+    public static void save(Path path, Repository<TrainingRecord> repository) throws DataStorageException {
+        CsvExporter.write(path, TrainingRecord.class, repository.all());
+    }
+
+    /**
+     * Читає CSV у UTF-8 та відновлює записи.
+     *
+     * @param path шлях до файла
+     * @return відновлені записи у порядку файла
+     * @throws DataStorageException якщо файл неможливо прочитати або дані пошкоджено
+     */
+    public static List<TrainingRecord> load(Path path) throws DataStorageException {
+        String csv;
+        try {
+            csv = Files.readString(path, StandardCharsets.UTF_8);
+        } catch (IOException exception) {
+            throw new DataStorageException("Не вдалося прочитати CSV: %s".formatted(path), exception);
+        }
+        List<List<String>> rows = CsvParser.parseDocument(csv);
+        if (rows.isEmpty()) {
+            return List.of();
+        }
+        List<String> header = rows.get(0);
+        List<TrainingRecord> restored = new ArrayList<>();
+        for (int index = 1; index < rows.size(); index++) {
+            restored.add(TrainingRecord.fromFields(header, rows.get(index)));
+        }
+        return List.copyOf(restored);
+    }
+}
+```
+
+## Помилки
+
+*Таблиця 2 – Рівні помилок*
+
+| Рівень | Приклад | Реакція | Тест |
+|---|---|---|---|
+| Модель | від'ємна тривалість | IllegalArgumentException у конструкторі | TrainingTest |
+| Формат | 2 поля замість 6 | DataStorageException «Очікується 6 полів…» | rejectsCorruptedRows |
+| Значення | «багато» у числі, YOGA у enum | DataStorageException, cause – NumberFormat/IllegalArgument | rejectsCorruptedRows |
+| CSV | незакриті лапки, символ після лапок | DataStorageException | parserRejectsBrokenQuotes |
+| Файл | запис у каталог, читання відсутнього файла | DataStorageException, cause – IOException | wrapsFileErrorWithCause |
+| Рефлексія | клас без @CsvColumn | DataStorageException | exporterIsNotBoundToDomain |
+
+DataStorageException – checked-виняток із конструкторами (message) і (message, cause). Порожніх catch немає: виняток або передається з контекстом, або в Main перетворюється на повідомлення з причиною.
 
 ## Тестування
 
-Перенесено 31 тест ЛР1–ЛР3 і додано 10 тестів TrainingQueriesTest: фільтр із межею 45 хв, порядок у map, групування з явним типом ключа, статистика й порожній вхід, top-5 із другим критерієм, межі ліміту (0, 100, −1), Optional для дубльованого й відсутнього ключа, еквівалентність циклу, відсутність мутації вхідної колекції, порожній вхід для всіх запитів.
+Перенесено 41 тест ЛР1–ЛР4 і додано 9 тестів StorageTest: сховище, пошук і незмінність знімка; анотація під час виконання та порядок стовпців; екранування коми, лапок і перенесення; round-trip із multiline-полем (6 CSV-записів = заголовок + 5, хоча фізичних рядків більше); порожній набір – лише заголовок; експорт іншого класу й клас без анотацій; хибна кількість полів, число й enum із перевіркою getCause(); помилки парсера; помилки файлової системи з IOException як cause.
 
-*Лістинг 2 – src/test/java/ua/lpnu/kzp/TrainingQueriesTest.java*
+*Лістинг 8 – src/test/java/ua/lpnu/kzp/StorageTest.java*
 
 ```text
 package ua.lpnu.kzp;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.LocalDate;
-import java.util.ArrayList;
-import java.util.IntSummaryStatistics;
 import java.util.List;
-import java.util.Map;
-import java.util.Optional;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
-class TrainingQueriesTest {
-    /* Контрольний набір: 8 записів, дубльована дата 09-08, рівна дистанція 8.50 у 09-01 і 09-05. */
-    private final List<Training> trainings = List.of(
-            Training.fromCsv("2026-09-01;біг;45;8.50;520"),
-            Training.fromCsv("2026-09-02;велосипед;90;32.00;780"),
-            Training.fromCsv("2026-09-03;плавання;40;1.50;410"),
-            Training.fromCsv("2026-09-05;біг;30;8.50;350"),
-            Training.fromCsv("2026-09-06;тренажери;60;0.00;450"),
-            Training.fromCsv("2026-09-08;ходьба;75;6.80;300"),
-            Training.fromCsv("2026-09-08;велосипед;120;41.30;820"),
-            Training.fromCsv("2026-09-10;біг;45;10.00;610"));
+class StorageTest {
+    @TempDir
+    Path directory;
 
-    /* Перевіряє фільтр і межу 45 хв (45 входить, 40 - ні). */
-    @Test
-    void filtersLongTrainingsIncludingBoundary() {
-        List<Training> result = TrainingQueries.longTrainings(trainings);
-        assertEquals(6, result.size());
-        assertTrue(result.stream().allMatch(training -> training.getMinutes() >= 45));
-        assertTrue(result.contains(trainings.get(0)));
+    private final List<TrainingRecord> original = List.of(
+            TrainingRecord.from(Training.fromCsv("2026-09-01;біг;45;8.50;520")),
+            TrainingRecord.from(Training.fromCsv("2026-09-02;велосипед;90;32.00;780")),
+            TrainingRecord.from(Training.fromCsv("2026-09-03;плавання;40;1.50;410")),
+            TrainingRecord.from(Training.fromCsv("2026-09-06;тренажери;60;0.00;450")),
+            new TrainingRecord(LocalDate.of(2026, 9, 8), TrainingKind.WALKING, 75, 6.8, 300,
+                    "Парк \"Сихів\", 2 кола\nдругий рядок опису"));
+
+    /* Плоский клас іншого домену для перевірки універсальності експортера. */
+    static final class OtherRecord {
+        @CsvColumn("код")
+        private final String code = "A-1";
+        @CsvColumn("кількість")
+        private final int amount = 3;
     }
 
-    /* Перевіряє перетворення map і збереження порядку. */
-    @Test
-    void mapsDistancesInOriginalOrder() {
-        assertEquals(List.of(8.5, 32.0, 1.5, 8.5, 0.0, 6.8, 41.3, 10.0),
-                TrainingQueries.distances(trainings));
+    /* Клас без анотацій. */
+    static final class NoColumns {
+        private final int value = 1;
     }
 
-    /* Перевіряє групування з явним типом ключа. */
+    /* Перевіряє типобезпечне сховище, пошук і незмінність знімка. */
     @Test
-    void groupsDistanceByKind() {
-        Map<TrainingKind, Double> result = TrainingQueries.distanceByKind(trainings);
-        assertEquals(27.0, result.get(TrainingKind.RUNNING), 0.0001);
-        assertEquals(73.3, result.get(TrainingKind.CYCLING), 0.0001);
-        assertEquals(0.0, result.get(TrainingKind.GYM), 0.0001);
-        assertEquals(5, result.size());
+    void repositoryStoresFindsAndReturnsSnapshot() {
+        Repository<TrainingRecord> repository = new Repository<>();
+        repository.addAll(original);
+        assertEquals(5, repository.all().size());
+        assertEquals(1, repository.find(record -> record.getKind() == TrainingKind.CYCLING).size());
+        assertThrows(UnsupportedOperationException.class, () -> repository.all().clear());
+        assertThrows(NullPointerException.class, () -> repository.add(null));
     }
 
-    /* Перевіряє зведену статистику та порожній вхід. */
+    /* Перевіряє анотацію під час виконання і детермінований порядок стовпців. */
     @Test
-    void summarizesCaloriesAndEmptyInput() {
-        IntSummaryStatistics statistics = TrainingQueries.calorieStatistics(trainings);
-        assertEquals(8, statistics.getCount());
-        assertEquals(4240, statistics.getSum());
-        assertEquals(300, statistics.getMin());
-        assertEquals(820, statistics.getMax());
-        assertEquals(530.0, statistics.getAverage(), 0.0001);
-        assertEquals(0, TrainingQueries.calorieStatistics(List.of()).getCount());
+    void headerComesFromAnnotationsSortedByFieldName() throws Exception {
+        assertEquals(List.of("калорії", "дата", "опис", "дистанція", "тривалість", "вид"),
+                CsvExporter.header(TrainingRecord.class));
+        CsvColumn column = TrainingRecord.class.getDeclaredField("date").getAnnotation(CsvColumn.class);
+        assertEquals("дата", column.value());
     }
 
-    /* Перевіряє top-5, другий критерій і усікання шостого запису. */
+    /* Перевіряє екранування коми, лапок і перенесення рядка. */
     @Test
-    void ordersTopByDistanceThenDate() {
-        List<Training> top = TrainingQueries.topByDistance(trainings, 5);
-        assertEquals(List.of(41.3, 32.0, 10.0, 8.5, 8.5),
-                top.stream().map(Training::getDistanceKm).toList());
-        // За рівної дистанції 8.50 раніша дата стоїть першою.
-        assertEquals(LocalDate.of(2026, 9, 1), top.get(3).getDate());
-        assertEquals(LocalDate.of(2026, 9, 5), top.get(4).getDate());
+    void escapesCommaQuotesAndNewline() {
+        assertEquals("просто", CsvExporter.escape("просто"));
+        assertEquals("\"а, б\"", CsvExporter.escape("а, б"));
+        assertEquals("\"Парк \"\"Сихів\"\"\"", CsvExporter.escape("Парк \"Сихів\""));
+        assertEquals("\"1\n2\"", CsvExporter.escape("1\n2"));
     }
 
-    /* Перевіряє нульовий, завеликий і від'ємний ліміт. */
+    /* Перевіряє round-trip, у тому числі multiline-поле. */
     @Test
-    void handlesLimitBoundaries() {
-        assertEquals(List.of(), TrainingQueries.topByDistance(trainings, 0));
-        assertEquals(8, TrainingQueries.topByDistance(trainings, 100).size());
-        assertThrows(IllegalArgumentException.class, () -> TrainingQueries.topByDistance(trainings, -1));
+    void roundTripPreservesAllRecords() throws Exception {
+        Path path = directory.resolve("trainings.csv");
+        Repository<TrainingRecord> repository = new Repository<>();
+        repository.addAll(original);
+        TrainingStorage.save(path, repository);
+        String csv = Files.readString(path, StandardCharsets.UTF_8);
+        assertTrue(csv.contains("\"Парк \"\"Сихів\"\", 2 кола\nдругий рядок опису\""));
+        List<TrainingRecord> restored = TrainingStorage.load(path);
+        assertEquals(original, restored);
+        // 1 заголовок + 5 записів, хоча фізичних рядків більше через multiline-поле.
+        assertEquals(6, CsvParser.parseDocument(csv).size());
     }
 
-    /* Перевіряє Optional: дубльований ключ повертає перший запис, відсутній - empty. */
+    /* Перевіряє експорт порожнього набору: лише заголовок. */
     @Test
-    void findsFirstByDateOrEmpty() {
-        Optional<Training> found = TrainingQueries.findByDate(trainings, LocalDate.of(2026, 9, 8));
-        assertEquals(TrainingKind.WALKING, found.orElseThrow().getTrainingKind());
-        assertTrue(TrainingQueries.findByDate(trainings, LocalDate.of(2026, 9, 30)).isEmpty());
-        assertTrue(TrainingQueries.findByDate(List.of(), LocalDate.of(2026, 9, 8)).isEmpty());
+    void exportsEmptyRepositoryAsHeaderOnly() throws Exception {
+        Path path = directory.resolve("empty.csv");
+        TrainingStorage.save(path, new Repository<>());
+        assertEquals(List.of(), TrainingStorage.load(path));
+        assertEquals(1, CsvParser.parseDocument(Files.readString(path, StandardCharsets.UTF_8)).size());
     }
 
-    /* Перевіряє еквівалентність потокового підсумку та циклу ЛР2. */
+    /* Перевіряє, що експортер працює з іншим класом і відхиляє клас без анотацій. */
     @Test
-    void streamSummaryMatchesLegacyLoop() {
-        int minutes = 0;
-        double distance = 0;
-        int maxCalories = 0;
-        for (Training training : trainings) {
-            minutes += training.getMinutes();
-            distance += training.getDistanceKm();
-            maxCalories = Math.max(maxCalories, training.getCalories());
-        }
-        DurationDistance summary = DurationDistance.of(trainings);
-        assertEquals(minutes, summary.totalMinutes());
-        assertEquals(distance, summary.totalDistance(), 0.0001);
-        assertEquals(maxCalories, summary.maxCalories());
-        assertEquals(new DurationDistance(0, 0, 0.0, 0), DurationDistance.of(List.of()));
+    void exporterIsNotBoundToDomain() throws Exception {
+        String csv = CsvExporter.toCsv(OtherRecord.class, List.of(new OtherRecord()));
+        assertEquals(List.of(List.of("кількість", "код"), List.of("3", "A-1")), CsvParser.parseDocument(csv));
+        assertThrows(DataStorageException.class, () -> CsvExporter.toCsv(NoColumns.class, List.of()));
     }
 
-    /* Перевіряє, що запити не змінюють вхідну колекцію. */
+    /* Перевіряє хибну кількість полів, хибне число та хибний enum. */
     @Test
-    void queriesDoNotMutateInput() {
-        List<Training> source = new ArrayList<>(trainings);
-        List<Training> before = List.copyOf(source);
-        TrainingQueries.longTrainings(source);
-        TrainingQueries.distances(source);
-        TrainingQueries.distanceByKind(source);
-        TrainingQueries.calorieStatistics(source);
-        TrainingQueries.topByDistance(source, 3);
-        TrainingQueries.findByDate(source, LocalDate.of(2026, 9, 8));
-        assertEquals(before, source);
+    void rejectsCorruptedRows() {
+        List<String> header = List.of("калорії", "дата", "опис", "дистанція", "тривалість", "вид");
+        assertThrows(DataStorageException.class,
+                () -> TrainingRecord.fromFields(header, List.of("520", "2026-09-01")));
+        DataStorageException number = assertThrows(DataStorageException.class,
+                () -> TrainingRecord.fromFields(header,
+                        List.of("багато", "2026-09-01", "о", "8.5", "45", "RUNNING")));
+        assertInstanceOf(NumberFormatException.class, number.getCause());
+        DataStorageException kind = assertThrows(DataStorageException.class,
+                () -> TrainingRecord.fromFields(header,
+                        List.of("520", "2026-09-01", "о", "8.5", "45", "YOGA")));
+        assertInstanceOf(IllegalArgumentException.class, kind.getCause());
     }
 
-    /* Перевіряє порожній вхід для всіх запитів. */
+    /* Перевіряє помилки парсера: незакриті лапки та символ після лапок. */
     @Test
-    void handlesEmptyInput() {
-        assertTrue(TrainingQueries.longTrainings(List.of()).isEmpty());
-        assertTrue(TrainingQueries.distances(List.of()).isEmpty());
-        assertTrue(TrainingQueries.distanceByKind(List.of()).isEmpty());
-        assertTrue(TrainingQueries.topByDistance(List.of(), 5).isEmpty());
+    void parserRejectsBrokenQuotes() {
+        assertThrows(DataStorageException.class, () -> CsvParser.parseDocument("\"не закрито,1"));
+        assertThrows(DataStorageException.class, () -> CsvParser.parseDocument("\"а\"б,1"));
+        assertThrows(DataStorageException.class, () -> CsvParser.parse("1\n2"));
+    }
+
+    /* Перевіряє збереження першопричини помилки файлової системи. */
+    @Test
+    void wrapsFileErrorWithCause() throws Exception {
+        Path notAFile = directory.resolve("folder");
+        Files.createDirectory(notAFile);
+        DataStorageException write = assertThrows(DataStorageException.class,
+                () -> TrainingStorage.save(notAFile, new Repository<>()));
+        assertInstanceOf(IOException.class, write.getCause());
+        DataStorageException read = assertThrows(DataStorageException.class,
+                () -> TrainingStorage.load(directory.resolve("missing.csv")));
+        assertInstanceOf(IOException.class, read.getCause());
     }
 }
 ```
 
-*Лістинг 3 – Результат mvnw.cmd -B clean verify*
+*Лістинг 9 – Результат mvnw.cmd -B clean verify*
 
 ```text
-[INFO] Building kzp-lab-andrushko 1.3.0
-[INFO] Tests run: 9, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.092 s -- in ua.lpnu.kzp.TrainingHierarchyTest
-[INFO] Tests run: 10, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.117 s -- in ua.lpnu.kzp.TrainingProcessorTest
-[INFO] Tests run: 10, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.042 s -- in ua.lpnu.kzp.TrainingQueriesTest
-[INFO] Tests run: 12, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.027 s -- in ua.lpnu.kzp.TrainingTest
-[INFO] Tests run: 41, Failures: 0, Errors: 0, Skipped: 0
-[INFO] Building jar: C:\Users\user\kzp-labs\lab04\target\kzp-lab-andrushko-1.3.0.jar
+[INFO] Building kzp-lab-andrushko 1.4.0
+[INFO] Tests run: 9, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.201 s -- in ua.lpnu.kzp.StorageTest
+[INFO] Tests run: 9, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.035 s -- in ua.lpnu.kzp.TrainingHierarchyTest
+[INFO] Tests run: 10, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.035 s -- in ua.lpnu.kzp.TrainingProcessorTest
+[INFO] Tests run: 10, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.050 s -- in ua.lpnu.kzp.TrainingQueriesTest
+[INFO] Tests run: 12, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.036 s -- in ua.lpnu.kzp.TrainingTest
+[INFO] Tests run: 50, Failures: 0, Errors: 0, Skipped: 0
+[INFO] Building jar: C:\Users\user\kzp-labs\lab05\target\kzp-lab-andrushko-1.4.0.jar
 [INFO] BugInstance size is 0
 [INFO] No errors/warnings found
 [INFO] BUILD SUCCESS
@@ -342,7 +771,7 @@ class TrainingQueriesTest {
 
 ## Інфраструктура
 
-Команди: mvnw.cmd test, mvnw.cmd verify, mvnw.cmd package, java -jar target/kzp-lab-andrushko-1.3.0.jar. SpotBugs у фазі verify – без зауважень. CI на Ubuntu, Windows і macOS та JAR-артефакт: посилання на запуск – після push.
+Команди: mvnw.cmd test, mvnw.cmd verify, mvnw.cmd package, java -jar target/kzp-lab-andrushko-1.4.0.jar [--export out/trainings.csv]. CSV і target не додаються в репозиторій (.gitignore: target/, out/). JAR публікується як CI-артефакт: посилання на запуск GitHub Actions – після push.
 
 ## GitHub Issues і Pull Request
 
@@ -350,16 +779,16 @@ class TrainingQueriesTest {
 
 | Issue | Мітка | Зміна | Перевірка |
 |---|---|---|---|
-| Запити filter і map | feature | longTrainings, distances | тести межі й порядку |
-| Групування та статистика | feature | distanceByKind, calorieStatistics | groupsDistanceByKind, summarizes… |
-| Top-N зі складеним компаратором | feature | topByDistance | ordersTop…, handlesLimit… |
-| Пошук через Optional | feature | findByDate | findsFirstByDateOrEmpty |
-| Заміна циклів у звіті | feature | DurationDistance.of, totalLoad | streamSummaryMatchesLegacyLoop |
-| Документація ЛР4 | docs | README, javadoc, REPORT | рев'ю PR |
+| Repository<T> | feature | add, all, find | repositoryStores… |
+| Анотація @CsvColumn | feature | RUNTIME, FIELD | headerComesFromAnnotations… |
+| Рефлексивний експортер | feature | CsvExporter, escape | escapes…, exporterIsNotBound… |
+| Парсер і round-trip | feature | CsvParser, TrainingStorage | roundTripPreserves… |
+| Власний виняток | feature | DataStorageException з cause | wrapsFileErrorWithCause |
+| Документація ЛР5 | docs | README, javadoc, REPORT | рев'ю PR |
 
-## Результати запитів
+## Порівняння стану
 
-*Лістинг 4 – Вивід версії 1.3.0*
+*Лістинг 10 – Вивід версії 1.4.0*
 
 ```text
 Звіт: спортивні тренування
@@ -402,13 +831,14 @@ class TrainingQueriesTest {
 Пошук за датою 2026-09-08: 2026-09-08 ходьба: 75 хв, 6.80 км, 300 ккал
 Пошук за датою 2026-09-30: не знайдено
 Звіт записано у out\report.txt
+CSV-експорт: out\trainings.csv
+Заголовок: калорії,дата,опис,дистанція,тривалість,вид
+Записів у сховищі: 8, відновлено: 8
+Велосипедних записів (Repository.find): 2
+Round-trip: true
 ```
 
-Перші 12 рядків звіту ідентичні попереднім версіям; розділ «Запити Stream API» додано наприкінці.
-
-## Порівняння реалізацій
-
-Потокова версія читабельніша там, де обчислення – послідовність кроків «відібрати → перетворити → зібрати»: намір видно з назв операцій, накопичувальні змінні зникли, групування в EnumMap займає один вираз. Водночас кількість рядків не є критерієм: форматування результатів залишилося звичайним кодом, а для простих сум потік лише трохи коротший за цикл. Важливіше, що запити стали чистими функціями без побічних ефектів, які легко тестувати окремо.
+Усі розділи звіту попередніх робіт збереглися без змін; наприкінці додано результати експорту: заголовок, кількість записів у сховищі та відновлених (8 = 8), результат Repository.find і Round-trip: true.
 
 ## Академічна доброчесність
 
@@ -416,87 +846,87 @@ class TrainingQueriesTest {
 
 ## Відповіді на контрольні питання
 
-1. Чим потік відрізняється від колекції?
+1. Яку проблему розв'язує параметр типу в Repository<T>?
 
-Колекція зберігає елементи; потік лише описує обчислення над джерелом і не зберігає даних, використовується один раз.
+Одне сховище працює з будь-яким типом, а компілятор гарантує, що в Repository<TrainingRecord> потрапляють лише записи тренувань – без приведень.
 
-2. Які частини має типовий конвеєр Stream API?
+2. Чим параметризований клас відрізняється від raw type?
 
-Джерело (list.stream()), проміжні операції (filter, map, sorted) і кінцева операція (toList, collect, findFirst).
+Raw type Repository вимикає перевірку типів: можна додати будь-який Object і отримати ClassCastException під час виконання.
 
-3. Чому проміжні операції називають лінивими?
+3. Навіщо Predicate<? super T> у методі пошуку?
 
-Вони не виконуються, доки не викликано кінцеву операцію; лише вона запускає конвеєр.
+Щоб приймати умови для T або його супертипу, наприклад Predicate<Object>.
 
-4. Що робить filter і який тип має його предикат?
+4. Чому all() має повертати незмінний знімок?
 
-Залишає елементи, для яких Predicate<T> повертає true; у мене – training -> training.getMinutes() >= 45.
+Зовнішній код не повинен змінювати внутрішній список сховища в обхід add; спроба clear() дає UnsupportedOperationException (перевірено тестом).
 
-5. Чим map відрізняється від mapToDouble?
+5. Що таке checked exception і коли він доречний у цій роботі?
 
-map повертає Stream<R> з об'єктами (Double пакується), mapToDouble – DoubleStream примітивів із методами sum, average.
+Виняток, який компілятор вимагає обробити або оголосити в throws. Доречний для очікуваних помилок збереження й формату – DataStorageException.
 
-6. Для чого застосовується distinct і від чого залежить його результат?
+6. Для чого зберігати cause власного винятку?
 
-Прибирає повтори; результат залежить від коректних equals/hashCode, реалізованих у ЛР3.
+Щоб не загубити першопричину (IOException, NumberFormatException) і мати повну діагностику; тести перевіряють getCause().
 
-7. Чому порядок sorted().limit(N) відрізняється від limit(N).sorted()?
+7. Чим Path і Files кращі за складання шляху рядком?
 
-Перший варіант дає N найкращих з усієї колекції, другий сортує лише перші N вхідних елементів.
+Path сам обирає роздільник ОС, а Files дає атомарні операції з явним кодуванням і зрозумілими винятками.
 
-8. Яку роль виконує кінцева операція?
+8. Чому кодування потрібно задавати і під час запису, і під час читання?
 
-Запускає обчислення й повертає результат або побічний ефект.
+Обидві сторони мають використати однакове кодування; інакше українські символи зіпсуються.
 
-9. Коли застосовується Collectors.joining?
+9. Що роблять @Retention(RUNTIME) і @Target(FIELD)?
 
-Для збирання рядків в один текст із роздільником, префіксом і суфіксом – у моєму звіті список дистанцій [8.50, 32.00, …].
+Перший зберігає анотацію для рефлексії під час виконання, другий дозволяє ставити її лише над полями.
 
-10. Як groupingBy будує карту груп?
+10. Чому анотація не виконує експорт сама?
 
-Для кожного елемента обчислює ключ (getTrainingKind) і додає елемент до групи цього ключа; фабрика карти й downstream-колектор задаються додатковими аргументами.
+Анотація – лише метадані; поведінку реалізує експортер, який їх читає.
 
-11. Як отримати суму в кожній групі через downstream collector?
+11. Чим getDeclaredFields() відрізняється від отримання публічних полів?
 
-groupingBy(Training::getTrainingKind, () -> new EnumMap<>(TrainingKind.class), summingDouble(Training::getDistanceKm)).
+getDeclaredFields повертає всі поля класу, зокрема private, але без успадкованих; getFields – лише public, включно з успадкованими.
 
-12. Які показники містить DoubleSummaryStatistics?
+12. Навіщо перевіряти trySetAccessible()?
 
-count, sum, min, max, average (у мене аналогічний IntSummaryStatistics).
+Доступ до private-поля може бути заборонено модулями; метод повертає false замість винятку, і ми повідомляємо про проблему власним винятком.
 
-13. Які значення має статистика для порожнього потоку?
+13. Чому порядок полів для CSV потрібно зробити детермінованим?
 
-count = 0, sum = 0, average = 0; min – максимальне можливе значення, max – мінімальне (для double ±Infinity), тому порожній випадок обробляється явно.
+Порядок getDeclaredFields не гарантований специфікацією; без сортування заголовок міг би відрізнятися між JVM.
 
-14. Як утворюється складений компаратор?
+14. Чому split(",") не підходить для загального CSV?
 
-Comparator.comparingDouble(...) для основного ключа, .reversed() для напрямку, .thenComparing(...) для другого ключа.
+Він розірве поле "2026-09-01 біг: 45 хв, 8.50 км" по комі всередині лапок.
 
-15. Чому reversed() потрібно застосовувати до окремого ключа до thenComparing?
+15. Як екрануються кома, лапка й перенесення рядка в CSV?
 
-reversed() розвертає весь уже складений компаратор; викликаний після thenComparing, він розвернув би й дату.
+Значення береться в подвійні лапки, а кожна внутрішня лапка подвоюється.
 
-16. Яку проблему розв'язує Optional у методі пошуку?
+16. Чому порожній список потребує окремого параметра Class<T>?
 
-Явно показує можливу відсутність результату й змушує викликача обрати поведінку замість ризику NullPointerException.
+Через стирання типів список не знає свого T, а без записів неможливо взяти клас першого елемента; заголовок будується з переданого класу.
 
-17. Чим відрізняються orElse, orElseThrow і ifPresent?
+17. Чим універсальний експортер відрізняється від предметного fromCsv?
 
-orElse повертає значення за замовчуванням, orElseThrow кидає виняток, ifPresent виконує дію лише за наявності значення.
+Експортер працює з будь-яким класом через рефлексію, а fromFields знає типи полів свого домену (LocalDate, enum) і їхні правила.
 
-18. Чому накопичення результату через зовнішній змінний список у forEach небажане?
+18. Які рівні помилок розрізняє програма?
 
-Це побічний ефект: код гірше читається, не безпечний для паралельних потоків; краще map(...).toList().
+Модель, формат, значення, CSV-синтаксис, файл і рефлексія (див. таблицю).
 
-19. Які властивості мають бути перевірені під час рефакторингу циклу на потік?
+19. Що доводить тест round-trip?
 
-Значення сум/мінімуму/максимуму, порядок, дублікати, порожній вхід, межі limit, відсутність мутації джерела, проходження старих тестів.
+Що запис і читання не втрачають і не спотворюють даних: відновлений список дорівнює початковому за всіма полями й порядком.
 
-20. За яких умов паралельний потік може бути виправданим?
+20. Чому виняток не можна поглинати порожнім catch?
 
-Великий обсяг даних, дорогі незалежні обчислення, асоціативні операції без спільного змінного стану та підтверджене вимірюванням прискорення.
+Помилка зникне без сліду, а програма продовжить роботу з неправильним станом, наприклад, із порожнім списком замість пошкодженого файла.
 
 ## Висновки
 
-Обчислення ЛР1–ЛР3 перенесено на Stream API, додано п'ять запитів і пошук через Optional. Результати збігаються з цикловою реалізацією (тест еквівалентності та незмінні рядки звіту), 41 тест проходить, SpotBugs без зауважень. Ці запити стануть основою ЛР5, де дані зберігатимуться в параметризованому сховищі й експортуватимуться в CSV.
+Java-продукт отримав параметризоване сховище, власний виняток із причиною, анотацію CSV-стовпців, універсальний рефлексивний експортер і документний парсер. Дані записуються й читаються в UTF-8, спеціальні символи екрануються, round-trip повертає рівні об'єкти. 50 тестів проходять, SpotBugs без зауважень. Створений CSV є узгодженим вхідним текстовим файлом для наступного (Python) програмного блоку.
 

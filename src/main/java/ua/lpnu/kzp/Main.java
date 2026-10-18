@@ -13,7 +13,7 @@ import java.util.List;
 /** Консольна програма обробки журналу спортивних тренувань (варіант 2). */
 public final class Main {
     /** Версія програми, узгоджена з pom.xml і Git-тегом. */
-    public static final String VERSION = "1.3.0";
+    public static final String VERSION = "1.4.0";
 
     /* Забороняє створення екземплярів класу точки входу. */
     private Main() {
@@ -41,10 +41,11 @@ public final class Main {
     static void run(String[] args, PrintStream out) {
         Path input = Path.of("data", "input.csv");
         Path output = Path.of("out", "report.txt");
+        Path export = Path.of("out", "trainings.csv");
         for (int index = 0; index < args.length; index++) {
             if ("--help".equals(args[index])) {
                 out.printf("Використання: java -jar kzp-lab-andrushko.jar "
-                        + "[--help] [--version] [--input <файл>] [--output <файл>]%n");
+                        + "[--help] [--version] [--input <файл>] [--output <файл>] [--export <csv>]%n");
                 return;
             } else if ("--version".equals(args[index])) {
                 String build = System.getenv("GITHUB_RUN_NUMBER");
@@ -55,6 +56,8 @@ public final class Main {
                 input = Path.of(args[++index]);
             } else if ("--output".equals(args[index]) && index + 1 < args.length) {
                 output = Path.of(args[++index]);
+            } else if ("--export".equals(args[index]) && index + 1 < args.length) {
+                export = Path.of(args[++index]);
             } else {
                 out.printf("Невідомий аргумент: %s%n", args[index]);
                 return;
@@ -74,8 +77,27 @@ public final class Main {
             out.print(report);
             FileReport.writeReport(output, report);
             out.printf("Звіт записано у %s%n", output);
+            exportAndVerify(trainings, export, out);
         } catch (IOException exception) {
             out.printf("Помилка роботи з файлом: %s%n", exception.getMessage());
+        } catch (DataStorageException exception) {
+            out.printf("Помилка зберігання: %s%s%n", exception.getMessage(),
+                    exception.getCause() == null ? "" : " (причина: " + exception.getCause() + ")");
         }
+    }
+
+    /* Зберігає тренування через Repository і CSV-експортер, читає назад і порівнює. */
+    private static void exportAndVerify(List<Training> trainings, Path export, PrintStream out)
+            throws DataStorageException {
+        Repository<TrainingRecord> repository = new Repository<>();
+        trainings.stream().map(TrainingRecord::from).forEach(repository::add);
+        TrainingStorage.save(export, repository);
+        List<TrainingRecord> restored = TrainingStorage.load(export);
+        out.printf("CSV-експорт: %s%n", export);
+        out.printf("Заголовок: %s%n", String.join(",", CsvExporter.header(TrainingRecord.class)));
+        out.printf("Записів у сховищі: %d, відновлено: %d%n", repository.size(), restored.size());
+        out.printf("Велосипедних записів (Repository.find): %d%n",
+                repository.find(record -> record.getKind() == TrainingKind.CYCLING).size());
+        out.printf("Round-trip: %s%n", repository.all().equals(restored));
     }
 }
