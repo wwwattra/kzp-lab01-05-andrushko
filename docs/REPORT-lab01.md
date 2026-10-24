@@ -40,6 +40,7 @@ date:String; kind:String; minutes:int; distanceKm:double; calories:int
 | data/input.csv | приклад даних: 8 коректних і 5 хибних рядків |
 | .github/workflows/ci.yml | CI: verify на трьох ОС і публікація JAR |
 | .github/ISSUE_TEMPLATE/*.yml, PULL_REQUEST_TEMPLATE.md | форми Issues і чек-лист PR |
+| ai/*.md | ролі агентів: Менеджер, DevOps, Розробник, Валідатор, Документатор, Рецензент (роль → вміння → обмеження → промпт) |
 | .gitignore, .gitattributes, .editorconfig, README.md | службові правила й документація |
 
 Потік даних: FileReport.readLines (UTF-8) → TrainingProcessor.splitValid (кожен рядок проходить validate: прочитати → перевірити → перетворити) → computeStats (масив із чотирьох показників) → formatReport (один текст звіту з Locale.ROOT) → вивід у консоль і FileReport.writeReport. Читання, обчислення та форматування розділено на окремі методи, щоб у ЛР2 замінити рядки й масиви власними класами.
